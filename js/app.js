@@ -30,7 +30,7 @@ function App() {
     setExamConfig((prev) => ({
       ...prev,
       yearFilter: "all",
-      count: newType === "practical" ? 18 : 20
+      count: newType === "practical" ? 20 : 100
     }));
     if (newType === "practical" && selectedScheduleId.endsWith("_written")) {
       const nextId = selectedScheduleId.replace("_written", "_practical");
@@ -93,7 +93,7 @@ function App() {
   const [examConfig, setExamConfig] = useState({
     subjectIds: [1, 2, 3, 4, 5],
     yearFilter: "all",
-    count: 20,
+    count: 100,
     mode: "all",
     solveStyle: "study",
     shuffleOptions: true,
@@ -512,23 +512,25 @@ function App() {
               <div className="hidden md:inline-flex p-1 rounded-xl bg-slate-950 border border-slate-800 ml-2 shrink-0">
                 <button
                   onClick={() => handleSwitchExamType("written")}
-                  className={`px-3 py-1 rounded-lg text-xs font-extrabold transition flex items-center gap-1 ${
+                  className={`px-3 py-1 rounded-lg text-xs font-extrabold transition flex items-center gap-1.5 ${
                     !isPractical
                       ? "bg-indigo-600 text-white shadow-sm"
                       : "text-slate-400 hover:text-white"
                   }`}
                 >
-                  📘 필기 과정
+                  <span>📘 필기 과정</span>
+                  {!isPractical && <span>✅</span>}
                 </button>
                 <button
                   onClick={() => handleSwitchExamType("practical")}
-                  className={`px-3 py-1 rounded-lg text-xs font-extrabold transition flex items-center gap-1 ${
+                  className={`px-3 py-1 rounded-lg text-xs font-extrabold transition flex items-center gap-1.5 ${
                     isPractical
                       ? "bg-emerald-600 text-white shadow-sm"
                       : "text-slate-400 hover:text-white"
                   }`}
                 >
-                  💻 실기 과정
+                  <span>💻 실기 과정</span>
+                  {isPractical && <span>✅</span>}
                 </button>
               </div>
             </div>
@@ -591,6 +593,7 @@ function App() {
             >
               <span>📘</span>
               <span>필기 (객관식)</span>
+              {!isPractical && <span>✅</span>}
             </button>
             <button
               onClick={() => handleSwitchExamType("practical")}
@@ -602,6 +605,7 @@ function App() {
             >
               <span>💻</span>
               <span>실기 (단답·서술)</span>
+              {isPractical && <span>✅</span>}
             </button>
           </div>
 
@@ -1150,61 +1154,53 @@ function App() {
         {/* ================= 1. 대시보드 탭 ================= */}
         {activeTab === "dashboard" && (
           <div className="space-y-4 sm:space-y-6">
-            {/* 데스크톱용 필기/실기 대형 선택 배너 (모바일은 상단 헤더 세그먼트 바와 통합되어 깔끔함 유지!) */}
-            <div className="hidden md:grid md:grid-cols-2 gap-4">
+            {/* 필기/실기 과정 선택 카드 (선택 시 '선택됨' 글자 대신 체크표시 이모티콘 ✅ 표시) */}
+            <div className="grid grid-cols-2 gap-2.5 sm:gap-4">
               <button
                 onClick={() => handleSwitchExamType("written")}
-                className={`p-4 rounded-2xl border text-left transition flex items-center justify-between ${
+                className={`p-3.5 sm:p-4 rounded-2xl border text-left transition flex items-center justify-between gap-2 ${
                   !isPractical
                     ? "bg-indigo-600/20 border-indigo-500 ring-2 ring-indigo-500/30"
                     : "bg-slate-900 border-slate-800 hover:border-slate-700 opacity-75"
                 }`}
               >
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">📘</span>
-                    <span className="text-base font-extrabold text-white">
-                      필기 과정 (4지선다 객관식)
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-base sm:text-lg shrink-0">📘</span>
+                    <span className="text-xs sm:text-base font-extrabold text-white truncate">
+                      필기 과정 (객관식)
                     </span>
                   </div>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    100문항 · 과목당 40점 이상, 전 과목 평균 60점 이상 합격
+                  <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5 line-clamp-1">
+                    100문항 · 과목당 40점, 평균 60점 합격
                   </p>
                 </div>
-                <span
-                  className={`text-xs font-bold px-3 py-1 rounded-full ${
-                    !isPractical ? "bg-indigo-600 text-white" : "bg-slate-800 text-slate-400"
-                  }`}
-                >
-                  {!isPractical ? "현재 선택됨" : "전환하기"}
+                <span className="text-base sm:text-lg shrink-0">
+                  {!isPractical ? "✅" : ""}
                 </span>
               </button>
 
               <button
                 onClick={() => handleSwitchExamType("practical")}
-                className={`p-4 rounded-2xl border text-left transition flex items-center justify-between ${
+                className={`p-3.5 sm:p-4 rounded-2xl border text-left transition flex items-center justify-between gap-2 ${
                   isPractical
                     ? "bg-emerald-600/20 border-emerald-500 ring-2 ring-emerald-500/30"
                     : "bg-slate-900 border-slate-800 hover:border-slate-700 opacity-75"
                 }`}
               >
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">💻</span>
-                    <span className="text-base font-extrabold text-white">
-                      실기 과정 (단답·서술·실무작업형)
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-base sm:text-lg shrink-0">💻</span>
+                    <span className="text-xs sm:text-base font-extrabold text-white truncate">
+                      실기 과정 (단답·서술)
                     </span>
                   </div>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    단답형(3점)·서술형(6점)·작업형(Snort/로그/설정 6점) · 60점 이상 합격
+                  <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5 line-clamp-1">
+                    20문항 실전(단답·서술·작업형) · 60점 합격
                   </p>
                 </div>
-                <span
-                  className={`text-xs font-bold px-3 py-1 rounded-full ${
-                    isPractical ? "bg-emerald-600 text-white" : "bg-slate-800 text-slate-400"
-                  }`}
-                >
-                  {isPractical ? "현재 선택됨" : "전환하기"}
+                <span className="text-base sm:text-lg shrink-0">
+                  {isPractical ? "✅" : ""}
                 </span>
               </button>
             </div>
@@ -1412,7 +1408,7 @@ function App() {
                             startRandomExam({
                               ...examConfig,
                               subjectIds: [subj.id],
-                              count: isPractical ? 10 : 20,
+                              count: 20,
                               mode: "all",
                               solveStyle: "study"
                             })
@@ -1575,11 +1571,7 @@ function App() {
                       }
                       className="bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-200 w-full outline-none"
                     >
-                      <option value={5}>5문항 (미니)</option>
-                      <option value={10}>10문항 (빠른)</option>
-                      <option value={18}>18문항 (실기실전)</option>
-                      <option value={20}>20문항 (1과목)</option>
-                      <option value={30}>30문항 (종합)</option>
+                      <option value={20}>20문항 (실기실전)</option>
                       <option value={50}>50문항 (하프)</option>
                       <option value={100}>100문항 (전체)</option>
                     </select>
