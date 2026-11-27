@@ -1,4 +1,98 @@
-// 정보보안기사 필기 5과목 핵심 기출문제 및 요약 데이터베이스
+﻿// 망키시큐리티 (Mangkey Security) - 정보보안기사 & 정보처리기사 2027년 시험 일정 및 5과목 기출 데이터베이스
+
+window.EXAM_SCHEDULE_2027 = {
+  defaultTargetId: "2027_1_written",
+  notice: "※ 한국산업인력공단(Q-Net) 국가기술자격 정기 기사 시험 일정 기준 (원하는 목표 회차를 클릭하면 상단 D-DAY가 자동 변경됩니다)",
+  targets: [
+    {
+      id: "2027_1_written",
+      title: "2027년 정기 기사 1회 필기",
+      examName: "정보처리기사 / 정보보안기사 1회 필기",
+      date: "2027-02-13",
+      applyPeriod: "2027.01.18 ~ 01.21",
+      examPeriod: "2027.02.13 ~ 03.05",
+      resultDate: "2027.03.10"
+    },
+    {
+      id: "2027_1_practical",
+      title: "2027년 정기 기사 1회 실기",
+      examName: "정보처리기사 / 정보보안기사 1회 실기",
+      date: "2027-04-17",
+      applyPeriod: "2027.03.22 ~ 03.25",
+      examPeriod: "2027.04.17 ~ 05.05",
+      resultDate: "2027.06.04"
+    },
+    {
+      id: "2027_2_written",
+      title: "2027년 정기 기사 2회 필기",
+      examName: "정보처리기사 / 정보보안기사 2회 필기",
+      date: "2027-05-09",
+      applyPeriod: "2027.04.12 ~ 04.15",
+      examPeriod: "2027.05.09 ~ 05.29",
+      resultDate: "2027.06.09"
+    },
+    {
+      id: "2027_2_practical",
+      title: "2027년 정기 기사 2회 실기",
+      examName: "정보처리기사 / 정보보안기사 2회 실기",
+      date: "2027-07-17",
+      applyPeriod: "2027.06.21 ~ 06.24",
+      examPeriod: "2027.07.17 ~ 08.04",
+      resultDate: "2027.09.03"
+    },
+    {
+      id: "2027_3_written",
+      title: "2027년 정기 기사 3회 필기",
+      examName: "정보처리기사 / 정보보안기사 3회 필기",
+      date: "2027-08-08",
+      applyPeriod: "2027.07.05 ~ 07.08",
+      examPeriod: "2027.08.08 ~ 08.28",
+      resultDate: "2027.09.08"
+    },
+    {
+      id: "2027_3_practical",
+      title: "2027년 정기 기사 3회 실기",
+      examName: "정보처리기사 / 정보보안기사 3회 실기",
+      date: "2027-10-16",
+      applyPeriod: "2027.09.13 ~ 09.16",
+      examPeriod: "2027.10.16 ~ 11.03",
+      resultDate: "2027.12.03"
+    }
+  ],
+  fullTable: [
+    {
+      round: "2027년 정기 기사 제1회",
+      certTypes: "정보처리기사 · 정보보안기사 공통",
+      writtenApply: "2027.01.18(월) ~ 01.21(목)",
+      writtenExam: "2027.02.13(토) ~ 03.05(금)",
+      writtenResult: "2027.03.10(수)",
+      practicalApply: "2027.03.22(월) ~ 03.25(목)",
+      practicalExam: "2027.04.17(토) ~ 05.05(수)",
+      finalResult: "2027.06.04(금)"
+    },
+    {
+      round: "2027년 정기 기사 제2회",
+      certTypes: "정보처리기사 · 정보보안기사 공통",
+      writtenApply: "2027.04.12(월) ~ 04.15(목)",
+      writtenExam: "2027.05.09(일) ~ 05.29(토)",
+      writtenResult: "2027.06.09(수)",
+      practicalApply: "2027.06.21(월) ~ 06.24(목)",
+      practicalExam: "2027.07.17(토) ~ 08.04(수)",
+      finalResult: "2027.09.03(금)"
+    },
+    {
+      round: "2027년 정기 기사 제3회",
+      certTypes: "정보처리기사 · 정보보안기사 공통",
+      writtenApply: "2027.07.05(월) ~ 07.08(목)",
+      writtenExam: "2027.08.08(일) ~ 08.28(토)",
+      writtenResult: "2027.09.08(수)",
+      practicalApply: "2027.09.13(월) ~ 09.16(목)",
+      practicalExam: "2027.10.16(토) ~ 11.03(수)",
+      finalResult: "2027.12.03(금)"
+    }
+  ]
+};
+
 window.INFOSEC_SUBJECTS = [
   {
     id: 1,
@@ -57,7 +151,7 @@ window.INITIAL_QUESTIONS = [
   {
     id: "Q101",
     subjectId: 1,
-    year: "2024년 1회 기출유형",
+    year: "2026년 1회 기출유형",
     difficulty: "중",
     tags: ["리눅스 로그", "utmp", "wtmp", "btmp", "lastlog"],
     question: "리눅스(Linux) 시스템의 로그 파일과 이를 확인하는 명령어의 연결로 옳지 않은 것은?",
@@ -91,7 +185,7 @@ window.INITIAL_QUESTIONS = [
   {
     id: "Q103",
     subjectId: 1,
-    year: "2024년 2회 기출유형",
+    year: "2025년 1회 기출유형",
     difficulty: "중",
     tags: ["SetUID", "특수권한", "Sticky Bit", "umask"],
     question: "리눅스 파일 시스템에서 특수 권한(SetUID, SetGID, Sticky Bit)에 대한 설명으로 옳은 것은?",
@@ -161,7 +255,7 @@ window.INITIAL_QUESTIONS = [
   {
     id: "Q201",
     subjectId: 2,
-    year: "2024년 2회 기출유형",
+    year: "2026년 1회 기출유형",
     difficulty: "중",
     tags: ["DDoS", "Slowloris", "RUDY", "HTTP GET Flooding"],
     question: "다음 중 웹 서버의 가용성을 침해하는 애플리케이션 계층(L7) DDoS 공격 기법과 그 특징의 연결로 옳지 않은 것은?",
@@ -178,7 +272,7 @@ window.INITIAL_QUESTIONS = [
   {
     id: "Q202",
     subjectId: 2,
-    year: "2024년 1회 기출유형",
+    year: "2025년 1회 기출유형",
     difficulty: "중",
     tags: ["IPSec", "AH", "ESP", "전송모드", "터널모드"],
     question: "네트워크 계층(L3) 보안 프로토콜인 IPSec(IP Security)에 대한 설명으로 옳지 않은 것은?",
@@ -265,7 +359,7 @@ window.INITIAL_QUESTIONS = [
   {
     id: "Q301",
     subjectId: 3,
-    year: "2024년 2회 기출유형",
+    year: "2026년 1회 기출유형",
     difficulty: "중",
     tags: ["XSS", "CSRF", "웹 취약점", "SameSite", "HttpOnly"],
     question: "웹 애플리케이션 취약점인 XSS(Cross-Site Scripting)와 CSRF(Cross-Site Request Forgery)를 비교한 설명으로 가장 적절하지 않은 것은?",
@@ -282,7 +376,7 @@ window.INITIAL_QUESTIONS = [
   {
     id: "Q302",
     subjectId: 3,
-    year: "2024년 1회 기출유형",
+    year: "2025년 1회 기출유형",
     difficulty: "중",
     tags: ["SQL Injection", "Prepared Statement", "시큐어 코딩"],
     question: "SQL Injection 공격을 근본적으로 예방하기 위한 시큐어 코딩 기법으로 가장 올바른 것은?",
@@ -369,7 +463,7 @@ window.INITIAL_QUESTIONS = [
   {
     id: "Q401",
     subjectId: 4,
-    year: "2024년 2회 기출유형",
+    year: "2026년 1회 기출유형",
     difficulty: "중",
     tags: ["블록암호 운용모드", "ECB", "CBC", "CTR", "GCM"],
     question: "블록 암호 운용 모드(Block Cipher Modes of Operation)에 대한 설명으로 옳지 않은 것은?",
@@ -386,7 +480,7 @@ window.INITIAL_QUESTIONS = [
   {
     id: "Q402",
     subjectId: 4,
-    year: "2024년 1회 기출유형",
+    year: "2025년 1회 기출유형",
     difficulty: "중",
     tags: ["접근통제 모델", "BLP", "Biba", "Clark-Wilson", "Chinese Wall"],
     question: "강제적 접근통제(MAC) 기반의 보안 모델인 벨-라파둘라(Bell-LaPadula, BLP) 모델과 비바(Biba) 모델에 대한 설명으로 옳은 것은?",
@@ -473,7 +567,7 @@ window.INITIAL_QUESTIONS = [
   {
     id: "Q501",
     subjectId: 5,
-    year: "2024년 2회 기출유형",
+    year: "2026년 1회 기출유형",
     difficulty: "중",
     tags: ["ISMS-P", "인증기준", "유효기간", "사후심사"],
     question: "「정보보호 및 개인정보보호 관리체계 인증 등에 관한 고시」에 따른 ISMS-P 인증 제도에 대한 설명으로 옳지 않은 것은?",
@@ -490,7 +584,7 @@ window.INITIAL_QUESTIONS = [
   {
     id: "Q502",
     subjectId: 5,
-    year: "2024년 1회 기출유형",
+    year: "2025년 1회 기출유형",
     difficulty: "하",
     tags: ["위험관리", "위험처리", "회피", "전가", "감소", "수용"],
     question: "정보보호 위험관리(Risk Management) 과정에서 식별된 위험을 처리하는 4가지 방안(수용, 감소, 회피, 전가) 중, 보험 가입이나 외부 전문 업체로의 아웃소싱 계약을 통해 위험의 책임을 제3자와 분담하는 방식은?",
@@ -577,7 +671,7 @@ window.INITIAL_QUESTIONS = [
   {
     id: "Q107",
     subjectId: 1,
-    year: "2024년 2회 기출유형",
+    year: "2026년 2회 기출유형",
     difficulty: "중",
     tags: ["umask", "기본권한", "파일권한", "디렉터리권한"],
     question: "리눅스 시스템에서 현재 사용자의 umask 값이 '0027'로 설정되어 있을 때, 이 사용자가 새로 생성하는 일반 파일과 디렉터리의 기본 접근 권한(8진수 및 심볼릭)으로 옳은 것은?",
@@ -594,7 +688,7 @@ window.INITIAL_QUESTIONS = [
   {
     id: "Q108",
     subjectId: 1,
-    year: "2023년 3회 기출유형",
+    year: "2025년 2회 기출유형",
     difficulty: "중",
     tags: ["포맷 스트링", "Format String", "%n", "%x"],
     question: "C언어 프로그램에서 printf(buf); 와 같이 포맷 지정자를 생략하고 사용자 입력을 직접 출력할 때 발생하는 포맷 스트링(Format String) 취약점에서, 특정 메모리 주소에 지금까지 출력된 바이트 수를 기록(Write)하여 실행 흐름을 변조하는 데 악용되는 형식 지정자는?",
@@ -681,7 +775,7 @@ window.INITIAL_QUESTIONS = [
   {
     id: "Q207",
     subjectId: 2,
-    year: "2024년 2회 기출유형",
+    year: "2026년 2회 기출유형",
     difficulty: "중",
     tags: ["DNS 보안", "DNSSEC", "DNS Spoofing", "Kaminsky 공격"],
     question: "DNS 응답 패킷의 위·변조(DNS Spoofing / Cache Poisoning)를 방지하기 위해 공개키 암호 기반의 전자서명을 도입한 DNSSEC(DNS Security Extensions)에 대한 설명으로 옳지 않은 것은?",
@@ -698,7 +792,7 @@ window.INITIAL_QUESTIONS = [
   {
     id: "Q208",
     subjectId: 2,
-    year: "2023년 3회 기출유형",
+    year: "2025년 2회 기출유형",
     difficulty: "중",
     tags: ["SSL/TLS", "Handshake", "Record 프로토콜", "Heartbleed"],
     question: "SSL/TLS 프로토콜의 계층 구조와 동작 과정에 대한 설명으로 틀린 것은?",
@@ -785,7 +879,7 @@ window.INITIAL_QUESTIONS = [
   {
     id: "Q307",
     subjectId: 3,
-    year: "2024년 2회 기출유형",
+    year: "2026년 2회 기출유형",
     difficulty: "중",
     tags: ["XXE", "XML 보안", "외부 엔티티", "시큐어 코딩"],
     question: "XML 문서를 파싱할 때 외부 엔티티(External Entity) 참조 기능이 활성화되어 있어 서버 내부의 로컬 파일(예: file:///etc/passwd)을 열람하거나 SSRF, DoS(Billion Laughs) 공격을 유발하는 취약점은?",
@@ -802,7 +896,7 @@ window.INITIAL_QUESTIONS = [
   {
     id: "Q308",
     subjectId: 3,
-    year: "2023년 3회 기출유형",
+    year: "2025년 2회 기출유형",
     difficulty: "중",
     tags: ["전자상거래", "SET", "이중서명", "Dual Signature"],
     question: "신용카드 기반 전자상거래 보안 프로토콜인 SET(Secure Electronic Transaction)에서 상점에게는 구매자의 신용카드 결제 정보(PI)를 숨기고, 카드사(PG)에게는 구매자의 물품 주문 정보(OI)를 숨기면서도 두 정보의 상호 연관성과 무결성을 증명하기 위해 사용하는 핵심 기술은?",
@@ -889,7 +983,7 @@ window.INITIAL_QUESTIONS = [
   {
     id: "Q407",
     subjectId: 4,
-    year: "2024년 2회 기출유형",
+    year: "2026년 2회 기출유형",
     difficulty: "중",
     tags: ["대칭키 암호", "AES", "DES", "Feistel", "SPN"],
     question: "현대 대칭키 블록 암호 알고리즘인 DES, AES, SEED, ARIA의 내부 구조와 특징에 대한 설명으로 옳지 않은 것은?",
@@ -906,7 +1000,7 @@ window.INITIAL_QUESTIONS = [
   {
     id: "Q408",
     subjectId: 4,
-    year: "2023년 3회 기출유형",
+    year: "2025년 2회 기출유형",
     difficulty: "중",
     tags: ["PKI", "CRL", "OCSP", "인증서 폐지"],
     question: "공개키 기반구조(PKI)에서 사용자의 개인키 유출 등으로 인해 유효기간이 남아있는 인증서가 폐지(Revocation)되었는지 여부를 확인하는 방식에 대한 설명으로 옳은 것은?",
@@ -993,7 +1087,7 @@ window.INITIAL_QUESTIONS = [
   {
     id: "Q507",
     subjectId: 5,
-    year: "2024년 2회 기출유형",
+    year: "2026년 2회 기출유형",
     difficulty: "중",
     tags: ["정량적 위험분석", "SLE", "ALE", "ARO", "EF"],
     question: "정보보호 위험 분석에서 자산 가치(AV)가 2억 원인 웹 서버가 특정 위협에 노출될 경우 자산의 25%(노출계수 EF = 0.25)가 손실될 것으로 평가되었다. 이 위협이 2년에 1회꼴(연간발생률 ARO = 0.5)로 발생한다고 할 때, 단일예상손실(SLE)과 연간예상손실(ALE)은 얼마인가?",
@@ -1010,7 +1104,7 @@ window.INITIAL_QUESTIONS = [
   {
     id: "Q508",
     subjectId: 5,
-    year: "2023년 3회 기출유형",
+    year: "2025년 2회 기출유형",
     difficulty: "중",
     tags: ["정보통신망법", "침해사고 신고", "24시간", "ISMS 의무대상"],
     question: "「정보통신망 이용촉진 및 정보보호 등에 관한 법률」에 따른 침해사고 대응 및 ISMS 인증 의무에 대한 설명으로 옳은 것은?",
@@ -1236,3 +1330,4 @@ window.SUBJECT_SUMMARIES = {
     ]
   }
 };
+

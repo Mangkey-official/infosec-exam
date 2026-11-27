@@ -1,4 +1,4 @@
-// 정보보안기사 필기 랜덤 문제 생성, AI 변형, 맞춤형 요약본 생성 및 기출 텍스트 파서 엔진
+// 망키시큐리티 (Mangkey Security) - 랜덤 문제 생성, 연도별 필터, 회원가입/클라우드 이력 연동, 오답 초기화 및 요약 엔진
 
 window.InfoSecEngine = {
   STORAGE_KEYS: {
@@ -6,46 +6,349 @@ window.InfoSecEngine = {
     HISTORY: "infosec_solve_history_v1",
     BOOKMARKS: "infosec_bookmarks_v1",
     CUSTOM_SUMMARIES: "infosec_custom_summaries_v1",
-    API_KEY: "infosec_gemini_api_key_v1"
+    API_KEY: "infosec_gemini_api_key_v1",
+    THEME: "mangkey_theme_v1",
+    DDAY_TARGET: "mangkey_dday_target_v1",
+    CURRENT_USER: "mangkey_current_user_v1",
+    USERS_DB: "mangkey_users_db_v1"
   },
 
-  // 전체 문제 로드 (기본 내장 DB + 사용자 추가/AI 생성 문제)
-  getAllQuestions() {
-    const customRaw = localStorage.getItem(this.STORAGE_KEYS.CUSTOM_QUESTIONS);
-    let customList = [];
+  // ================= 1. 회원가입 및 아이디별 이력 / 클라우드 동기화 =================
+  getCurrentUser() {
     try {
-      customList = customRaw ? JSON.parse(customRaw) : [];
+      const raw = localStorage.getItem(this.STORAGE_KEYS.CURRENT_USER);
+      return raw ? JSON.parse(raw) : null;
     } catch (e) {
-      customList = [];
+      return null;
     }
-    return [...window.INITIAL_QUESTIONS, ...customList];
   },
 
-  // 사용자 정의/AI 문제 저장
-  addCustomQuestions(newQuestions) {
-    const customRaw = localStorage.getItem(this.STORAGE_KEYS.CUSTOM_QUESTIONS);
-    let customList = [];
+  getUsersDB() {
     try {
-      customList = customRaw ? JSON.parse(customRaw) : [];
-    } catch (e) {
-      customList = [];
-    }
-    const updated = [...newQuestions, ...customList];
-    localStorage.setItem(this.STORAGE_KEYS.CUSTOM_QUESTIONS, JSON.stringify(updated));
-    return updated;
-  },
-
-  // 풀이 이력 로드: { [questionId]: { attempts: number, correct: number, lastWrong: boolean, lastAttemptAt: string, selectedAnswer: number } }
-  getHistory() {
-    try {
-      return JSON.parse(localStorage.getItem(this.STORAGE_KEYS.HISTORY) || "{}");
+      return JSON.parse(localStorage.getItem(this.STORAGE_KEYS.USERS_DB) || "{}");
     } catch (e) {
       return {};
     }
   },
 
-  // 풀이 결과 기록
+  saveUsersDB(db) {
+    localStorage.setItem(this.STORAGE_KEYS.USERS_DB, JSON.stringify(db));
+  },
+
+  // 현재 로그인한 사용자의 스토리지 키 prefix 반환
+  getUserKey(baseKey) {
+    const user = this.getCurrentUser();
+    if (!user || !user.username) return baseKey;
+    return `${baseKey}_user_${user.username.toLowerCase()}`;
+  },
+
+  // 회원가입 (로컬 DB 등록 + 클라우드 동기화 ID 자동 생성)
+  async registerUser({ username, password, nickname }) {
+    const cleanId = (username || "").trim().toLowerCase();
+    if (!cleanId || cleanId.length < 3) {
+      throw new Error("아이디는 3글자 이상 입력해주세요.");
+    }
+    if (!password || password.length < 4) {
+      throw new Error("비밀번호는 4자리 이상 입력해주세요.");
+    }
+
+    const db = this.getUsersDB();
+    if (db[cleanId]) {
+      throw new Error("이미 존재하는 아이디입니다. 로그인 탭을 이용해주세요.");
+    }
+
+    // 현재 비로그인 상태에서 풀었던 이력이 있다면 가입 계정의 초기 이력으로 승계
+    const guestHistory = this.getHistory();
+    const guestBookmarks = this.getBookmarks();
+    const guestCustomQ = this.getCustomQuestions();
+
+    let cloudId = null;
+    try {
+      const payload = {
+        name: `mangkey_user_${cleanId}`,
+        data: {
+          username: cleanId,
+          nickname: nickname || cleanId,
+          pwHash: btoa(encodeURIComponent(password)),
+          history: guestHistory,
+          bookmarks: guestBookmarks,
+          customQuestions: guestCustomQ,
+          updatedAt: new Date().toISOString()
+        }
+      };
+      const resp = await fetch("https://api.restful-api.dev/objects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (resp.ok) {
+        const created = await resp.json();
+        cloudId = created.id || null;
+      }
+    } catch (e) {
+      // 오프라인이거나 네트워크 제한 시에도 로컬 가입 및 동기화 코드 방식으로 정상 동작
+    }
+
+    const userRecord = {
+      username: cleanId,
+      nickname: (nickname || cleanId).trim(),
+      pwHash: btoa(encodeURIComponent(password)),
+      cloudId,
+      createdAt: new Date().toISOString(),
+      lastSyncAt: cloudId ? new Date().toISOString() : null
+    };
+
+    db[cleanId] = userRecord;
+    this.saveUsersDB(db);
+    localStorage.setItem(this.STORAGE_KEYS.CURRENT_USER, JSON.stringify(userRecord));
+
+    // 사용자 전용 스토리지에 초기 데이터 저장
+    localStorage.setItem(this.getUserKey(this.STORAGE_KEYS.HISTORY), JSON.stringify(guestHistory));
+    localStorage.setItem(this.getUserKey(this.STORAGE_KEYS.BOOKMARKS), JSON.stringify(guestBookmarks));
+    localStorage.setItem(this.getUserKey(this.STORAGE_KEYS.CUSTOM_QUESTIONS), JSON.stringify(guestCustomQ));
+
+    return userRecord;
+  },
+
+  // 로그인 (로컬 계정 또는 다른 기기에서 클라우드 ID/동기화 코드로 접속)
+  async loginUser({ username, password, cloudSyncId = "" }) {
+    const cleanId = (username || "").trim().toLowerCase();
+    if (!cleanId) throw new Error("아이디를 입력해주세요.");
+
+    const db = this.getUsersDB();
+    const inputPwHash = btoa(encodeURIComponent(password || ""));
+
+    // 1) 다른 기기에서 클라우드 동기화 ID를 함께 입력했거나 기존 계정에 cloudId가 있는 경우 클라우드에서 최신 데이터 조회
+    const targetCloudId = (cloudSyncId || "").trim() || (db[cleanId] && db[cleanId].cloudId);
+
+    if (targetCloudId) {
+      try {
+        const resp = await fetch(`https://api.restful-api.dev/objects/${encodeURIComponent(targetCloudId)}`);
+        if (resp.ok) {
+          const remoteObj = await resp.json();
+          const rData = remoteObj.data || {};
+          if (rData.username && rData.username !== cleanId) {
+            throw new Error("클라우드 동기화 코드의 아이디와 입력한 아이디가 일치하지 않습니다.");
+          }
+          if (rData.pwHash && rData.pwHash !== inputPwHash) {
+            throw new Error("비밀번호가 일치하지 않습니다.");
+          }
+
+          const userRecord = {
+            username: cleanId,
+            nickname: rData.nickname || cleanId,
+            pwHash: rData.pwHash || inputPwHash,
+            cloudId: targetCloudId,
+            lastSyncAt: new Date().toISOString()
+          };
+          db[cleanId] = userRecord;
+          this.saveUsersDB(db);
+          localStorage.setItem(this.STORAGE_KEYS.CURRENT_USER, JSON.stringify(userRecord));
+
+          if (rData.history) {
+            localStorage.setItem(this.getUserKey(this.STORAGE_KEYS.HISTORY), JSON.stringify(rData.history));
+          }
+          if (rData.bookmarks) {
+            localStorage.setItem(this.getUserKey(this.STORAGE_KEYS.BOOKMARKS), JSON.stringify(rData.bookmarks));
+          }
+          if (rData.customQuestions) {
+            localStorage.setItem(this.getUserKey(this.STORAGE_KEYS.CUSTOM_QUESTIONS), JSON.stringify(rData.customQuestions));
+          }
+          return { user: userRecord, syncedFromCloud: true };
+        }
+      } catch (err) {
+        if (err.message.includes("비밀번호") || err.message.includes("일치하지")) {
+          throw err;
+        }
+      }
+    }
+
+    // 2) 로컬 DB 확인
+    const localUser = db[cleanId];
+    if (!localUser) {
+      throw new Error(
+        "해당 기기에 등록되지 않은 아이디입니다. 회원가입을 하시거나, 다른 기기에서 가입하셨다면 [클라우드 동기화 코드]를 함께 입력해주세요."
+      );
+    }
+    if (localUser.pwHash !== inputPwHash) {
+      throw new Error("비밀번호가 올바르지 않습니다.");
+    }
+
+    localStorage.setItem(this.STORAGE_KEYS.CURRENT_USER, JSON.stringify(localUser));
+    return { user: localUser, syncedFromCloud: false };
+  },
+
+  logoutUser() {
+    localStorage.removeItem(this.STORAGE_KEYS.CURRENT_USER);
+  },
+
+  // 현재 사용자의 이력을 클라우드에 업로드 동기화
+  async syncToCloud() {
+    const user = this.getCurrentUser();
+    if (!user) return null;
+
+    const payloadData = {
+      username: user.username,
+      nickname: user.nickname,
+      pwHash: user.pwHash,
+      history: this.getHistory(),
+      bookmarks: this.getBookmarks(),
+      customQuestions: this.getCustomQuestions(),
+      updatedAt: new Date().toISOString()
+    };
+
+    try {
+      let cloudId = user.cloudId;
+      if (cloudId) {
+        const resp = await fetch(`https://api.restful-api.dev/objects/${encodeURIComponent(cloudId)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: `mangkey_user_${user.username}`,
+            data: payloadData
+          })
+        });
+        if (!resp.ok) cloudId = null;
+      }
+
+      if (!cloudId) {
+        const resp = await fetch("https://api.restful-api.dev/objects", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: `mangkey_user_${user.username}`,
+            data: payloadData
+          })
+        });
+        if (resp.ok) {
+          const created = await resp.json();
+          cloudId = created.id;
+        }
+      }
+
+      if (cloudId) {
+        const updatedUser = { ...user, cloudId, lastSyncAt: new Date().toISOString() };
+        const db = this.getUsersDB();
+        db[user.username] = updatedUser;
+        this.saveUsersDB(db);
+        localStorage.setItem(this.STORAGE_KEYS.CURRENT_USER, JSON.stringify(updatedUser));
+        return updatedUser;
+      }
+    } catch (e) {
+      return null;
+    }
+    return null;
+  },
+
+  // 클라우드에서 최신 이력 불러오기
+  async pullFromCloud() {
+    const user = this.getCurrentUser();
+    if (!user || !user.cloudId) {
+      throw new Error("연결된 클라우드 동기화 ID가 없습니다. 먼저 [클라우드 저장]을 눌러주세요.");
+    }
+    const resp = await fetch(`https://api.restful-api.dev/objects/${encodeURIComponent(user.cloudId)}`);
+    if (!resp.ok) throw new Error("클라우드 서버에서 데이터를 불러오지 못했습니다.");
+    const remoteObj = await resp.json();
+    const rData = remoteObj.data || {};
+    if (rData.history) {
+      localStorage.setItem(this.getUserKey(this.STORAGE_KEYS.HISTORY), JSON.stringify(rData.history));
+    }
+    if (rData.bookmarks) {
+      localStorage.setItem(this.getUserKey(this.STORAGE_KEYS.BOOKMARKS), JSON.stringify(rData.bookmarks));
+    }
+    if (rData.customQuestions) {
+      localStorage.setItem(this.getUserKey(this.STORAGE_KEYS.CUSTOM_QUESTIONS), JSON.stringify(rData.customQuestions));
+    }
+    const updatedUser = { ...user, lastSyncAt: new Date().toISOString() };
+    localStorage.setItem(this.STORAGE_KEYS.CURRENT_USER, JSON.stringify(updatedUser));
+    return updatedUser;
+  },
+
+  // 어디서든 텍스트 코드 하나로 백업/복원 가능한 휴대용 이력 코드 생성
+  exportBackupCode() {
+    const data = {
+      user: this.getCurrentUser(),
+      history: this.getHistory(),
+      bookmarks: this.getBookmarks(),
+      customQuestions: this.getCustomQuestions()
+    };
+    return btoa(encodeURIComponent(JSON.stringify(data)));
+  },
+
+  importBackupCode(codeStr) {
+    const decoded = JSON.parse(decodeURIComponent(atob(codeStr.trim())));
+    if (decoded.user && decoded.user.username) {
+      const db = this.getUsersDB();
+      db[decoded.user.username] = decoded.user;
+      this.saveUsersDB(db);
+      localStorage.setItem(this.STORAGE_KEYS.CURRENT_USER, JSON.stringify(decoded.user));
+    }
+    if (decoded.history) {
+      localStorage.setItem(this.getUserKey(this.STORAGE_KEYS.HISTORY), JSON.stringify(decoded.history));
+    }
+    if (decoded.bookmarks) {
+      localStorage.setItem(this.getUserKey(this.STORAGE_KEYS.BOOKMARKS), JSON.stringify(decoded.bookmarks));
+    }
+    if (decoded.customQuestions) {
+      localStorage.setItem(this.getUserKey(this.STORAGE_KEYS.CUSTOM_QUESTIONS), JSON.stringify(decoded.customQuestions));
+    }
+    return true;
+  },
+
+  // ================= 2. 문제 은행 & 연도 추출 =================
+  getCustomQuestions() {
+    const key = this.getUserKey(this.STORAGE_KEYS.CUSTOM_QUESTIONS);
+    const customRaw = localStorage.getItem(key) || localStorage.getItem(this.STORAGE_KEYS.CUSTOM_QUESTIONS);
+    try {
+      return customRaw ? JSON.parse(customRaw) : [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  getAllQuestions() {
+    return [...window.INITIAL_QUESTIONS, ...this.getCustomQuestions()];
+  },
+
+  // 문제의 연도(2022, 2023, 2024, 2025, 2026 등) 추출 헬퍼
+  extractYearNumber(yearStr) {
+    if (!yearStr) return "기타";
+    const m = String(yearStr).match(/(20\d{2})/);
+    return m ? m[1] : "기타";
+  },
+
+  // 선택 가능한 기출 연도 목록 반환 (예: ["2026", "2025", "2024", "2023", "2022"])
+  getAvailableYears() {
+    const all = this.getAllQuestions();
+    const yearSet = new Set();
+    all.forEach((q) => {
+      const y = this.extractYearNumber(q.year);
+      if (y !== "기타") yearSet.add(y);
+    });
+    return Array.from(yearSet).sort((a, b) => Number(b) - Number(a));
+  },
+
+  addCustomQuestions(newQuestions) {
+    const key = this.getUserKey(this.STORAGE_KEYS.CUSTOM_QUESTIONS);
+    const customList = this.getCustomQuestions();
+    const updated = [...newQuestions, ...customList];
+    localStorage.setItem(key, JSON.stringify(updated));
+    this.syncToCloud();
+    return updated;
+  },
+
+  // ================= 3. 풀이 이력 & 오답 초기화 =================
+  getHistory() {
+    const key = this.getUserKey(this.STORAGE_KEYS.HISTORY);
+    try {
+      return JSON.parse(localStorage.getItem(key) || "{}");
+    } catch (e) {
+      return {};
+    }
+  },
+
   recordAttempt(questionId, isCorrect, selectedAnswer) {
+    const key = this.getUserKey(this.STORAGE_KEYS.HISTORY);
     const history = this.getHistory();
     const prev = history[questionId] || { attempts: 0, correct: 0, lastWrong: false };
     history[questionId] = {
@@ -55,20 +358,66 @@ window.InfoSecEngine = {
       lastSelected: selectedAnswer,
       lastAttemptAt: new Date().toISOString()
     };
-    localStorage.setItem(this.STORAGE_KEYS.HISTORY, JSON.stringify(history));
+    localStorage.setItem(key, JSON.stringify(history));
+    this.syncToCloud();
     return history;
   },
 
-  // 북마크(중요 문제) 관리
+  // 오답노트 초기화 (특정 과목 또는 전체 오답 상태를 '복습 완료/초기화'로 해제)
+  clearWrongNotes(subjectId = null) {
+    const key = this.getUserKey(this.STORAGE_KEYS.HISTORY);
+    const history = this.getHistory();
+    const allQuestions = this.getAllQuestions();
+
+    Object.keys(history).forEach((qId) => {
+      if (history[qId] && history[qId].lastWrong) {
+        if (subjectId) {
+          const qObj = allQuestions.find((q) => q.id === qId);
+          if (qObj && Number(qObj.subjectId) === Number(subjectId)) {
+            history[qId].lastWrong = false;
+          }
+        } else {
+          history[qId].lastWrong = false;
+        }
+      }
+    });
+
+    localStorage.setItem(key, JSON.stringify(history));
+    this.syncToCloud();
+    return history;
+  },
+
+  // 단일 문제 오답 해제
+  clearSingleWrong(questionId) {
+    const key = this.getUserKey(this.STORAGE_KEYS.HISTORY);
+    const history = this.getHistory();
+    if (history[questionId]) {
+      history[questionId].lastWrong = false;
+      localStorage.setItem(key, JSON.stringify(history));
+      this.syncToCloud();
+    }
+    return history;
+  },
+
+  // 전체 풀이 기록 완전 초기화
+  resetAllHistory() {
+    const key = this.getUserKey(this.STORAGE_KEYS.HISTORY);
+    localStorage.setItem(key, "{}");
+    this.syncToCloud();
+    return {};
+  },
+
   getBookmarks() {
+    const key = this.getUserKey(this.STORAGE_KEYS.BOOKMARKS);
     try {
-      return JSON.parse(localStorage.getItem(this.STORAGE_KEYS.BOOKMARKS) || "[]");
+      return JSON.parse(localStorage.getItem(key) || "[]");
     } catch (e) {
       return [];
     }
   },
 
   toggleBookmark(questionId) {
+    const key = this.getUserKey(this.STORAGE_KEYS.BOOKMARKS);
     const list = this.getBookmarks();
     const idx = list.indexOf(questionId);
     if (idx >= 0) {
@@ -76,11 +425,11 @@ window.InfoSecEngine = {
     } else {
       list.push(questionId);
     }
-    localStorage.setItem(this.STORAGE_KEYS.BOOKMARKS, JSON.stringify(list));
+    localStorage.setItem(key, JSON.stringify(list));
+    this.syncToCloud();
     return list;
   },
 
-  // 과목별 성취도 및 취약점 분석
   getSubjectStats() {
     const questions = this.getAllQuestions();
     const history = this.getHistory();
@@ -118,7 +467,6 @@ window.InfoSecEngine = {
     });
   },
 
-  // 배열 셔플 (Fisher-Yates)
   shuffleArray(arr) {
     const copy = [...arr];
     for (let i = copy.length - 1; i > 0; i--) {
@@ -128,9 +476,10 @@ window.InfoSecEngine = {
     return copy;
   },
 
-  // 랜덤 기출 모의고사 생성 (과목 선택, 문항 수, 선지 셔플, 출제 모드)
+  // ================= 4. 랜덤 기출 모의고사 생성 (연도별 필터 포함) =================
   generateRandomExam({
     subjectIds = [1, 2, 3, 4, 5],
+    yearFilter = "all", // 'all' | '2026' | '2025' | '2024' | '2023' | '2022'
     count = 10,
     mode = "all", // 'all' | 'wrong_only' | 'unsolved_first' | 'bookmarked'
     shuffleOptions = true,
@@ -141,6 +490,14 @@ window.InfoSecEngine = {
     const bookmarks = this.getBookmarks();
 
     let pool = allQuestions.filter((q) => subjectIds.includes(Number(q.subjectId)));
+
+    // 연도별 필터 적용
+    if (yearFilter && yearFilter !== "all") {
+      const yearMatched = pool.filter((q) => this.extractYearNumber(q.year) === String(yearFilter));
+      if (yearMatched.length > 0) {
+        pool = yearMatched;
+      }
+    }
 
     if (mode === "wrong_only") {
       const wrongPool = pool.filter((q) => history[q.id] && history[q.id].lastWrong);
@@ -162,7 +519,7 @@ window.InfoSecEngine = {
 
     let selected = shuffledPool.slice(0, Math.min(count, shuffledPool.length));
 
-    // 1) 스마트 변형 혼합 옵션이 켜져 있으면 기본 문제와 스마트 변형 문제를 혼합
+    // 스마트 변형 혼합 옵션이 켜져 있으면 기본 문제와 스마트 변형 문제를 혼합
     if (includeSmartVariations && selected.length > 0) {
       const halfCount = Math.max(1, Math.floor(count / 2));
       const baseSlice = selected.slice(0, halfCount);
@@ -170,8 +527,7 @@ window.InfoSecEngine = {
       selected = this.shuffleArray([...selected, ...variations]).slice(0, count);
     }
 
-    // 2) 만약 선택한 과목이나 필터의 원본 문항 수가 요청한 count(예: 50문항, 100문항)보다 적을 경우,
-    // 부족한 개수만큼 서로 다른 유형의 스마트 기출변형 문제를 자동 생성하여 요청한 문항 수(count)를 100% 정확히 채움!
+    // 요청한 문항 수(예: 50문항, 100문항)보다 현재 필터 풀이 적을 경우 부족한 개수만큼 자동 변형 생성하여 100% 채움
     if (selected.length < count && shuffledPool.length > 0) {
       let fillIndex = 0;
       const needed = count - selected.length;
@@ -185,7 +541,6 @@ window.InfoSecEngine = {
       selected = [...selected, ...extraVariations];
     }
 
-    // 선지(보기) 순서 랜덤 셔플 처리
     return selected.slice(0, count).map((q) => {
       if (!shuffleOptions) return { ...q };
       const indexedOptions = q.options.map((optText, idx) => ({
@@ -202,7 +557,6 @@ window.InfoSecEngine = {
     });
   },
 
-  // 오프라인 스마트 기출 변형 문제 생성기 (다양한 변형 패턴을 지원하여 50~100문항 출제 시에도 중복 없는 실전 문제 생성)
   createLocalSmartVariation(baseQuestion, variantSeed = 0) {
     const allSameSubj = this.getAllQuestions().filter(
       (q) => q.subjectId === baseQuestion.subjectId && q.id !== baseQuestion.id
@@ -224,7 +578,6 @@ window.InfoSecEngine = {
     const patternType = variantSeed % 3;
 
     if (patternType === 1 && baseQuestion.keyPoint && peerQuestions.length >= 3) {
-      // 패턴 1: 핵심 요점(KeyPoint) 기반 정오 판별 문제 생성
       const tagTitle = (baseQuestion.tags && baseQuestion.tags[0]) || "핵심 보안 기술";
       newQuestionText = `[기출변형·핵심요점] 다음 중 '${tagTitle}' 및 관련 과목의 핵심 보안 개념에 대한 설명으로 가장 올바른 것은?`;
       const peerFalseCandidates = [];
@@ -255,7 +608,6 @@ window.InfoSecEngine = {
       newOptions = shuffled.map((s) => s.text);
       newAnswer = shuffled.findIndex((s) => s.isAns);
     } else if (isAskingForWrong && peerQuestions.length >= 2 && patternType === 0) {
-      // 패턴 0: 다른 기출의 올바른 명제(keyPoint)들과 원본의 틀린 선지(정답)를 교차 조합한 고난도 통합형 문제
       const tagTitle = (baseQuestion.tags && baseQuestion.tags[0]) || "정보보안 핵심 개념";
       newQuestionText = `[기출변형·통합형] 다음 중 '${tagTitle}' 및 관련 보안 기술에 대한 설명으로 옳지 않은 것은?`;
       const trueStatements = [...wrongOptionsFromBase];
@@ -273,7 +625,6 @@ window.InfoSecEngine = {
       newOptions = shuffled.map((s) => s.text);
       newAnswer = shuffled.findIndex((s) => s.isAns);
     } else {
-      // 패턴 2: 심화 응용 검토형 (선지 재구성)
       const tagLabel = (baseQuestion.tags && baseQuestion.tags.slice(0, 2).join("·")) || "실전응용";
       newQuestionText = `[기출변형·${tagLabel}] ${baseQuestion.question}`;
       const indexed = baseQuestion.options.map((t, idx) => ({
@@ -299,7 +650,6 @@ window.InfoSecEngine = {
     };
   },
 
-  // Gemini API를 이용한 AI 실전 기출 변형 문제 생성 (API Key 설정 시 동작, 미설정 시 스마트 변형 폴백)
   async generateQuestionsWithAI({ subjectId, topicKeyword, count = 3, apiKey }) {
     const subj = window.INFOSEC_SUBJECTS.find((s) => s.id === Number(subjectId)) || window.INFOSEC_SUBJECTS[0];
     const sampleQuestions = this.getAllQuestions()
@@ -307,11 +657,10 @@ window.InfoSecEngine = {
       .slice(0, 3);
 
     if (!apiKey || !apiKey.trim()) {
-      // API 키가 없을 경우 내장 스마트 변형 엔진으로 즉시 생성
       const basePool = this.shuffleArray(
         this.getAllQuestions().filter((q) => q.subjectId === subj.id)
       ).slice(0, count);
-      const generated = basePool.map((q) => this.createLocalSmartVariation(q));
+      const generated = basePool.map((q, idx) => this.createLocalSmartVariation(q, idx));
       this.addCustomQuestions(generated);
       return {
         mode: "local_smart",
@@ -331,7 +680,7 @@ ${JSON.stringify(sampleQuestions, null, 2)}
 [
   {
     "subjectId": ${subj.id},
-    "year": "AI 실전 기출변형",
+    "year": "2026년 AI 기출변형",
     "difficulty": "중",
     "tags": ["키워드1", "키워드2"],
     "question": "문제 지문...",
@@ -377,7 +726,6 @@ ${JSON.stringify(sampleQuestions, null, 2)}
     };
   },
 
-  // 맞춤형 핵심 요약본 자동 생성기 (과목별 + 오답/북마크/선택 태그 기반)
   generateCustomSummary({
     subjectIds = [1, 2, 3, 4, 5],
     includeWrongNotes = true,
@@ -405,7 +753,6 @@ ${JSON.stringify(sampleQuestions, null, 2)}
     const wrongQuestions = filteredQuestions.filter((q) => history[q.id] && history[q.id].lastWrong);
     const bookmarkedQuestions = filteredQuestions.filter((q) => bookmarks.includes(q.id));
 
-    // 과목별 핵심 요약 섹션 조립 (고도화된 DETAILED_SUBJECT_SUMMARIES 우선 활용)
     const summarySource = window.DETAILED_SUBJECT_SUMMARIES || window.SUBJECT_SUMMARIES;
     const kw = searchKeyword.trim().toLowerCase();
 
@@ -416,9 +763,14 @@ ${JSON.stringify(sampleQuestions, null, 2)}
 
       if (rawSummary && kw) {
         const filteredSections = rawSummary.sections.filter((sec) => {
-          const inTopic = sec.topic?.toLowerCase().includes(kw) || sec.summary?.toLowerCase().includes(kw) || sec.trap?.toLowerCase().includes(kw);
+          const inTopic =
+            sec.topic?.toLowerCase().includes(kw) ||
+            sec.summary?.toLowerCase().includes(kw) ||
+            sec.trap?.toLowerCase().includes(kw);
           const inBullets = sec.bullets?.some((b) => b.toLowerCase().includes(kw));
-          const inTable = sec.table?.rows?.some((r) => r.some((cell) => cell.toLowerCase().includes(kw)));
+          const inTable = sec.table?.rows?.some((r) =>
+            r.some((cell) => cell.toLowerCase().includes(kw))
+          );
           return inTopic || inBullets || inTable;
         });
         baseSummary = { ...rawSummary, sections: filteredSections };
@@ -442,8 +794,7 @@ ${JSON.stringify(sampleQuestions, null, 2)}
       };
     });
 
-    // 마크다운 내보내기용 텍스트 생성 (비교표 및 기출 함정 포함)
-    let markdown = `# 🛡️ 정보보안기사 필기 맞춤형 비주얼 핵심 요약본\n`;
+    let markdown = `# 🛡️ 망키시큐리티 정보보안기사 필기 맞춤형 비주얼 핵심 요약본\n`;
     markdown += `> 생성 일시: ${new Date().toLocaleString("ko-KR")}\n\n`;
 
     if (includeWrongNotes && wrongQuestions.length > 0) {
@@ -509,11 +860,9 @@ ${JSON.stringify(sampleQuestions, null, 2)}
     };
   },
 
-  // 텍스트 기출문제 자동 파서 (사용자가 붙여넣은 기출 텍스트를 분석해 구조화된 문제로 변환)
-  parseRawQuestionsText(rawText, defaultSubjectId = 1, defaultYear = "사용자 추가 기출") {
+  parseRawQuestionsText(rawText, defaultSubjectId = 1, defaultYear = "2026년 사용자 추가 기출") {
     if (!rawText || !rawText.trim()) return [];
 
-    // JSON 배열 형태인지 먼저 확인
     const trimmed = rawText.trim();
     if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
       try {
@@ -526,17 +875,19 @@ ${JSON.stringify(sampleQuestions, null, 2)}
           difficulty: item.difficulty || "중",
           tags: item.tags || ["사용자추가"],
           question: item.question || "문제 지문 없음",
-          options: Array.isArray(item.options) && item.options.length >= 2 ? item.options.slice(0, 4) : ["보기1", "보기2", "보기3", "보기4"],
+          options:
+            Array.isArray(item.options) && item.options.length >= 2
+              ? item.options.slice(0, 4)
+              : ["보기1", "보기2", "보기3", "보기4"],
           answer: typeof item.answer === "number" ? item.answer : 0,
           explanation: item.explanation || "사용자 등록 해설",
           keyPoint: item.keyPoint || item.explanation || ""
         }));
       } catch (e) {
-        // JSON이 아니면 일반 텍스트 파싱으로 진행
+        // 일반 텍스트 파싱으로 진행
       }
     }
 
-    // 빈 줄 2개 이상 또는 문제 번호(1. / Q1. / [문제 1]) 기준으로 블록 분리
     const blocks = trimmed
       .split(/\n\s*\n+|(?=\n(?:Q?\d+[\.\)]|\[문제\s*\d+\]))/g)
       .map((b) => b.trim())
@@ -557,7 +908,6 @@ ${JSON.stringify(sampleQuestions, null, 2)}
       let keyPoint = "";
 
       lines.forEach((line) => {
-        // 정답 라인 감지: "정답: 3", "답: ③", "정답 : 2번"
         const ansMatch = line.match(/^(?:정답|답|Answer)\s*[:：]?\s*([1-4①②③④])/i);
         if (ansMatch) {
           const token = ansMatch[1];
@@ -566,7 +916,6 @@ ${JSON.stringify(sampleQuestions, null, 2)}
           return;
         }
 
-        // 해설 라인 감지: "해설: ...", "요점: ..."
         const expMatch = line.match(/^(?:해설|풀이|Explanation)\s*[:：]\s*(.+)/i);
         if (expMatch) {
           explanation = expMatch[1].trim();
@@ -579,7 +928,6 @@ ${JSON.stringify(sampleQuestions, null, 2)}
           return;
         }
 
-        // 보기 라인 감지: ①, ②, ③, ④ 또는 1), 2), 3), 4) 또는 (1), (2), (3), (4)
         const optMatch = line.match(/^(?:[①②③④]|\(?[1-4]\)|[1-4]\.)\s*(.+)/);
         if (optMatch && questionLines.length > 0 && options.length < 4) {
           options.push(optMatch[1].trim());
@@ -603,7 +951,10 @@ ${JSON.stringify(sampleQuestions, null, 2)}
           subjectId: Number(defaultSubjectId),
           year: defaultYear,
           difficulty: "중",
-          tags: ["사용자추가", window.INFOSEC_SUBJECTS.find((s) => s.id === Number(defaultSubjectId))?.shortName || "기출"],
+          tags: [
+            "사용자추가",
+            window.INFOSEC_SUBJECTS.find((s) => s.id === Number(defaultSubjectId))?.shortName || "기출"
+          ],
           question: qText,
           options,
           answer,

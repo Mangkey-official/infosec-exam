@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#020617" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>SecuMaster - 정보보안기사 필기 랜덤 기출 & 요약본 시스템</title>
+  <title>망키시큐리티 - 정보보안기사·정보처리기사 필기 기출 & 요약 시스템</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- React 18 & Babel CDN -->
@@ -23,8 +23,8 @@
       word-break: keep-all;
       overflow-wrap: anywhere;
       -webkit-text-size-adjust: 100%;
+      transition: background-color 0.2s ease, color 0.2s ease;
     }
-    /* 모바일 가로 스크롤바 숨김 유틸리티 */
     .no-scrollbar::-webkit-scrollbar {
       display: none;
     }
@@ -32,6 +32,141 @@
       -ms-overflow-style: none;
       scrollbar-width: none;
     }
+
+    /* ================= 라이트 모드 (Light Mode) 완벽 대응 오버라이드 ================= */
+    body.light-mode,
+    body.light-mode .bg-slate-950 {
+      background-color: #f1f5f9 !important;
+      color: #0f172a !important;
+    }
+    body.light-mode .bg-slate-950\/90,
+    body.light-mode .bg-slate-950\/80,
+    body.light-mode .bg-slate-950\/70,
+    body.light-mode .bg-slate-950\/60,
+    body.light-mode .bg-slate-950\/40 {
+      background-color: #f8fafc !important;
+      color: #0f172a !important;
+    }
+    body.light-mode .bg-slate-900,
+    body.light-mode .bg-slate-900\/95,
+    body.light-mode .bg-slate-900\/90,
+    body.light-mode .bg-slate-900\/80,
+    body.light-mode .bg-slate-900\/70,
+    body.light-mode .bg-slate-900\/60,
+    body.light-mode .bg-slate-900\/40 {
+      background-color: #ffffff !important;
+      color: #0f172a !important;
+      box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.06);
+    }
+    body.light-mode .bg-slate-800,
+    body.light-mode .bg-slate-800\/30 {
+      background-color: #e2e8f0 !important;
+      color: #1e293b !important;
+    }
+    body.light-mode .hover\:bg-slate-800:hover,
+    body.light-mode .hover\:bg-slate-700:hover {
+      background-color: #cbd5e1 !important;
+      color: #0f172a !important;
+    }
+    /* 그라데이션 배너 라이트모드 보정 */
+    body.light-mode .from-indigo-950\/80,
+    body.light-mode .from-indigo-950,
+    body.light-mode .from-slate-950 {
+      --tw-gradient-from: #eef2ff !important;
+      --tw-gradient-via: #ffffff !important;
+      --tw-gradient-to: #f8fafc !important;
+    }
+    body.light-mode .from-amber-950\/40 {
+      --tw-gradient-from: #fffbeb !important;
+      --tw-gradient-via: #ffffff !important;
+      --tw-gradient-to: #eef2ff !important;
+    }
+    body.light-mode .from-rose-950\/40 {
+      --tw-gradient-from: #fff1f2 !important;
+      --tw-gradient-via: #fffbeb !important;
+      --tw-gradient-to: #ffffff !important;
+    }
+    body.light-mode .bg-indigo-950\/60,
+    body.light-mode .bg-indigo-950\/20 {
+      background-color: #eef2ff !important;
+      color: #1e1b4b !important;
+    }
+    body.light-mode .bg-rose-950\/20,
+    body.light-mode .bg-rose-950\/30 {
+      background-color: #fff1f2 !important;
+    }
+    body.light-mode .bg-amber-950\/20,
+    body.light-mode .bg-amber-950\/25 {
+      background-color: #fffbeb !important;
+    }
+    /* 테두리 색상 라이트모드 보정 */
+    body.light-mode .border-slate-900,
+    body.light-mode .border-slate-800,
+    body.light-mode .border-slate-800\/90,
+    body.light-mode .border-slate-800\/80,
+    body.light-mode .border-slate-800\/60,
+    body.light-mode .border-slate-700 {
+      border-color: #cbd5e1 !important;
+    }
+    body.light-mode .divide-slate-800\/80 > :not([hidden]) ~ :not([hidden]) {
+      border-color: #e2e8f0 !important;
+    }
+    /* 텍스트 가독성 라이트모드 보정 */
+    body.light-mode .text-white:not(.bg-indigo-600):not(.bg-emerald-600):not(.bg-rose-600):not(.bg-amber-600):not(.bg-indigo-500):not(.bg-rose-500):not(.from-indigo-600) {
+      color: #0f172a !important;
+    }
+    body.light-mode .bg-indigo-600,
+    body.light-mode .bg-indigo-500,
+    body.light-mode .bg-emerald-600,
+    body.light-mode .bg-emerald-600\/90,
+    body.light-mode .bg-rose-600,
+    body.light-mode .bg-rose-500,
+    body.light-mode .bg-amber-600,
+    body.light-mode .from-indigo-600 {
+      color: #ffffff !important;
+    }
+    body.light-mode .bg-indigo-600 .text-white,
+    body.light-mode .bg-emerald-600 .text-white,
+    body.light-mode .bg-rose-600 .text-white {
+      color: #ffffff !important;
+    }
+    body.light-mode .text-slate-100,
+    body.light-mode .text-slate-200 {
+      color: #1e293b !important;
+    }
+    body.light-mode .text-slate-300 {
+      color: #334155 !important;
+    }
+    body.light-mode .text-slate-400,
+    body.light-mode .text-slate-500 {
+      color: #64748b !important;
+    }
+    body.light-mode .text-indigo-200,
+    body.light-mode .text-indigo-300,
+    body.light-mode .text-indigo-400 {
+      color: #4338ca !important;
+    }
+    body.light-mode .text-amber-200,
+    body.light-mode .text-amber-200\/95,
+    body.light-mode .text-amber-300,
+    body.light-mode .text-amber-400 {
+      color: #b45309 !important;
+    }
+    body.light-mode .text-rose-100,
+    body.light-mode .text-rose-200,
+    body.light-mode .text-rose-300,
+    body.light-mode .text-rose-400 {
+      color: #be123c !important;
+    }
+    body.light-mode .text-emerald-200,
+    body.light-mode .text-emerald-300,
+    body.light-mode .text-emerald-400 {
+      color: #047857 !important;
+    }
+    body.light-mode .text-transparent {
+      color: transparent !important;
+    }
+
     @media print {
       .no-print {
         display: none !important;

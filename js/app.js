@@ -8,12 +8,69 @@ function App() {
   const [apiKey, setApiKey] = useState(() => localStorage.getItem(window.InfoSecEngine.STORAGE_KEYS.API_KEY) || "");
   const [toast, setToast] = useState(null);
 
-  // 모의고사 설정 및 진행 상태
+  // 1. 라이트모드 / 다크모드 상태
+  const [theme, setTheme] = useState(() => localStorage.getItem(window.InfoSecEngine.STORAGE_KEYS.THEME) || "dark");
+
+  useEffect(() => {
+    if (theme === "light") {
+      document.body.classList.add("light-mode");
+    } else {
+      document.body.classList.remove("light-mode");
+    }
+    localStorage.setItem(window.InfoSecEngine.STORAGE_KEYS.THEME, theme);
+  }, [theme]);
+
+  // 2. 2027년 시험 일정 D-DAY 및 일정표 모달 상태
+  const [selectedScheduleId, setSelectedScheduleId] = useState(
+    () => localStorage.getItem(window.InfoSecEngine.STORAGE_KEYS.DDAY_TARGET) || "2027_1_written"
+  );
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+
+  const currentDdayInfo = useMemo(() => {
+    const schedules = window.EXAM_SCHEDULE_2027?.targets || [];
+    const target = schedules.find((t) => t.id === selectedScheduleId) || schedules[0];
+    if (!target) return { label: "2027 필기", ddayText: "D-DAY", diffDays: 0, target: null };
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const examDate = new Date(target.date + "T00:00:00");
+    const diffTime = examDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const ddayText = diffDays > 0 ? `D-${diffDays}` : diffDays === 0 ? "D-DAY" : `D+${Math.abs(diffDays)}`;
+    return {
+      label: target.title,
+      ddayText,
+      diffDays,
+      target
+    };
+  }, [selectedScheduleId]);
+
+  const handleSelectDdayTarget = (targetId) => {
+    setSelectedScheduleId(targetId);
+    localStorage.setItem(window.InfoSecEngine.STORAGE_KEYS.DDAY_TARGET, targetId);
+    showToast("목표 시험일 D-DAY가 변경되었습니다!", "success");
+  };
+
+  // 3. 회원가입 & 로그인 (아이디별 이력 저장 및 어디서든 클라우드 연동) 상태
+  const [currentUser, setCurrentUser] = useState(() => window.InfoSecEngine.getCurrentUser());
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authTab, setAuthTab] = useState("login"); // login | register | sync
+  const [authForm, setAuthForm] = useState({
+    username: "",
+    password: "",
+    nickname: "",
+    cloudSyncId: "",
+    backupCodeInput: "",
+    loading: false
+  });
+
+  // 모의고사 설정 및 진행 상태 (연도별 선택 yearFilter 포함)
   const [examConfig, setExamConfig] = useState({
     subjectIds: [1, 2, 3, 4, 5],
+    yearFilter: "all", // all | 2026 | 2025 | 2024 | 2023 | 2022
     count: 10,
     mode: "all", // all | unsolved_first | wrong_only | bookmarked
-    solveStyle: "study", // study (즉시 정답/해설) | real (실전 채점)
+    solveStyle: "study", // study | real
     shuffleOptions: true,
     includeSmartVariations: false
   });
@@ -21,9 +78,9 @@ function App() {
 
   // 요약본 설정 상태
   const [summaryConfig, setSummaryConfig] = useState({
-    subjectIds: [1], // 한 과목씩 집중 보기 기본값
-    viewMode: "visual", // visual | cheatsheet | mynotes
-    mobileTableAsCards: true, // 모바일에서 표가 잘리지 않도록 카드 리스트로 자동 변환
+    subjectIds: [1],
+    viewMode: "visual",
+    mobileTableAsCards: true,
     includeWrongNotes: true,
     includeBookmarks: true,
     searchKeyword: "",
@@ -47,10 +104,13 @@ function App() {
   };
 
   const refreshData = () => {
+    setCurrentUser(window.InfoSecEngine.getCurrentUser());
     setQuestions(window.InfoSecEngine.getAllQuestions());
     setHistory(window.InfoSecEngine.getHistory());
     setBookmarks(window.InfoSecEngine.getBookmarks());
   };
+
+  const availableYears = useMemo(() => window.InfoSecEngine.getAvailableYears(), [questions]);
 
   // 타이머 작동
   useEffect(() => {
@@ -78,6 +138,114 @@ function App() {
     return { total: questions.length, solved, attempts, correct, wrong, accuracy };
   }, [subjectStats, questions]);
 
+  // 회원가입 처리
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    setAuthForm((prev) => ({ ...prev, loading: true }));
+    try {
+      const user = await window.InfoSecEngine.registerUser({
+        username: authForm.username,
+        password: authForm.password,
+        nickname: authForm.nickname
+      });
+      refreshData();
+      setShowAuthModal(false);
+      showToast(
+        `🎉 환영합니다, ${user.nickname}님! 아이디별로 학습 이력이 자동 저장됩니다.`,
+        "success"
+      );
+    } catch (err) {
+      showToast(err.message, "warn");
+    } finally {
+      setAuthForm((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
+  // 로그인 처리
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setAuthForm((prev) => ({ ...prev, loading: true }));
+    try {
+      const res = await window.InfoSecEngine.loginUser({
+        username: authForm.username,
+        password: authForm.password,
+        cloudSyncId: authForm.cloudSyncId
+      });
+      refreshData();
+      setShowAuthModal(false);
+      showToast(
+        res.syncedFromCloud
+          ? `☁️ ${res.user.nickname}님의 클라우드 학습 이력을 성공적으로 불러왔습니다!`
+          : `👋 반갑습니다, ${res.user.nickname}님! 저장된 학습 이력을 불러왔습니다.`,
+        "success"
+      );
+    } catch (err) {
+      showToast(err.message, "warn");
+    } finally {
+      setAuthForm((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
+  // 로그아웃 처리
+  const handleLogout = () => {
+    window.InfoSecEngine.logoutUser();
+    refreshData();
+    setShowAuthModal(false);
+    showToast("로그아웃되었습니다. (비로그인 게스트 모드로 전환)", "info");
+  };
+
+  // 클라우드 수동 동기화
+  const handleCloudPush = async () => {
+    setAuthForm((prev) => ({ ...prev, loading: true }));
+    try {
+      const updated = await window.InfoSecEngine.syncToCloud();
+      refreshData();
+      if (updated && updated.cloudId) {
+        showToast(`☁️ 클라우드 동기화 완료! (동기화 코드: ${updated.cloudId})`, "success");
+      } else {
+        showToast("로컬 저장소에 안전하게 저장되었습니다. 아래 휴대용 백업 코드로도 기기 간 이동이 가능합니다.", "info");
+      }
+    } finally {
+      setAuthForm((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
+  const handleCloudPull = async () => {
+    setAuthForm((prev) => ({ ...prev, loading: true }));
+    try {
+      await window.InfoSecEngine.pullFromCloud();
+      refreshData();
+      showToast("☁️ 클라우드에서 최신 학습 이력을 불러왔습니다!", "success");
+    } catch (err) {
+      showToast(err.message, "warn");
+    } finally {
+      setAuthForm((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
+  // 오답 초기화 핸들러
+  const handleClearWrongNotes = (subjectId = null) => {
+    if (totalStats.wrong === 0) {
+      showToast("초기화할 오답 내역이 없습니다.", "warn");
+      return;
+    }
+    window.InfoSecEngine.clearWrongNotes(subjectId);
+    refreshData();
+    showToast("🗑️ 오답 목록이 깔끔하게 초기화되었습니다!", "success");
+  };
+
+  const handleClearSingleWrong = (qId) => {
+    window.InfoSecEngine.clearSingleWrong(qId);
+    refreshData();
+    showToast("✅ 해당 문제가 오답노트에서 해제(복습 완료)되었습니다!", "success");
+  };
+
+  const handleResetAllHistory = () => {
+    window.InfoSecEngine.resetAllHistory();
+    refreshData();
+    showToast("🔄 현재 계정의 전체 풀이 통계 및 오답 기록이 초기화되었습니다.", "info");
+  };
+
   // 모의고사 시작
   const startRandomExam = (customCfg = null) => {
     const cfg = customCfg || examConfig;
@@ -97,6 +265,7 @@ function App() {
       revealed: {},
       finished: false,
       solveStyle: cfg.solveStyle,
+      yearFilter: cfg.yearFilter || "all",
       elapsedSec: 0
     });
     setActiveTab("exam");
@@ -215,7 +384,6 @@ function App() {
     [summaryConfig, questions, history, bookmarks]
   );
 
-  // 암기 모드용 볼드체(**텍스트**) 가림막 렌더링 헬퍼
   const renderFormattedText = (text, blockKey) => {
     if (!text) return null;
     const parts = text.split(/(\*\*[^*]+\*\*)/g);
@@ -255,41 +423,93 @@ function App() {
 
   const navTabs = [
     { id: "dashboard", icon: "📊", shortLabel: "홈/분석", label: "📊 대시보드" },
-    { id: "exam", icon: "🎲", shortLabel: "모의고사", label: "🎲 랜덤 기출·모의고사" },
+    { id: "exam", icon: "🎲", shortLabel: "모의고사", label: "🎲 연도별·랜덤 모의고사" },
     { id: "summary", icon: "📝", shortLabel: "핵심요약", label: "📝 핵심 요약본" },
-    { id: "wrongnote", icon: "❌", shortLabel: `오답(${totalStats.wrong})`, label: `❌ 오답·북마크 (${totalStats.wrong})` },
+    { id: "wrongnote", icon: "❌", shortLabel: `오답(${totalStats.wrong})`, label: `❌ 오답노트 (${totalStats.wrong})` },
     { id: "manager", icon: "➕", shortLabel: "문제추가", label: "➕ 기출추가·AI생성" }
   ];
 
   return (
     <div className="min-h-screen w-full max-w-[100vw] overflow-x-hidden bg-slate-950 text-slate-100 flex flex-col pb-20 md:pb-6">
-      {/* 상단 헤더 */}
-      <header className="sticky top-0 z-30 w-full bg-slate-900/95 backdrop-blur border-b border-slate-800 px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3.5 no-print">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
-          <div
-            onClick={() => setActiveTab("dashboard")}
-            className="flex items-center gap-2.5 min-w-0 cursor-pointer"
-          >
-            <div className="w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-xl bg-gradient-to-br from-indigo-500 to-cyan-500 flex items-center justify-center font-black text-base sm:text-lg shadow-lg shadow-indigo-500/20">
-              🛡️
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <h1 className="text-base sm:text-lg md:text-xl font-bold tracking-tight text-white truncate">
-                  SecuMaster <span className="text-indigo-400">정보보안기사</span>
-                </h1>
-                <span className="hidden xs:inline-block text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-medium whitespace-nowrap">
-                  필기 기출 & 요약
-                </span>
+      {/* ================= 상단 헤더 (망키시큐리티 + 2027 D-DAY + 계정 + 다크/라이트 토글) ================= */}
+      <header className="sticky top-0 z-30 w-full bg-slate-900/95 backdrop-blur border-b border-slate-800 px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 no-print">
+        <div className="max-w-7xl mx-auto flex flex-col gap-2">
+          {/* 1열: 로고 + D-DAY 버튼 + 라이트/다크모드 + 로그인 버튼 */}
+          <div className="flex items-center justify-between gap-2">
+            {/* 좌측 브랜드 로고 */}
+            <div
+              onClick={() => setActiveTab("dashboard")}
+              className="flex items-center gap-2.5 min-w-0 cursor-pointer"
+            >
+              <div className="w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-xl bg-gradient-to-br from-indigo-500 to-cyan-500 flex items-center justify-center font-black text-base sm:text-lg shadow-lg shadow-indigo-500/20">
+                🛡️
               </div>
-              <p className="text-[11px] text-slate-400 hidden sm:block truncate">
-                5대 과목 기출 기반 랜덤 모의고사 · 스마트 변형 출제 · 비주얼 핵심 요약본
-              </p>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <h1 className="text-base sm:text-lg md:text-xl font-extrabold tracking-tight text-white truncate">
+                    망키시큐리티
+                  </h1>
+                  <span className="hidden sm:inline-block text-[11px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-semibold whitespace-nowrap">
+                    기출생성 & 비주얼 요약
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 hidden lg:block truncate">
+                  연도별 기출 모의고사 · 스마트 변형 출제 · 아이디별 클라우드 이력 연동
+                </p>
+              </div>
+            </div>
+
+            {/* 우측: 2027 D-DAY 버튼 + 다크/라이트 전환 + 로그인/회원가입 */}
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              {/* 2027년 시험 일정 D-DAY 버튼 (클릭 시 2027 시험일정표 모달 오픈) */}
+              <button
+                onClick={() => setShowScheduleModal(true)}
+                className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-rose-500/20 hover:from-amber-500/30 hover:to-rose-500/30 border border-amber-500/40 flex items-center gap-1.5 transition shadow-sm"
+                title="클릭하여 2027년 정보처리기사·정보보안기사 전체 시험일정표 보기"
+              >
+                <span className="text-xs">📅</span>
+                <span className="text-[11px] sm:text-xs font-medium text-slate-200 hidden xs:inline">
+                  {currentDdayInfo.label}
+                </span>
+                <span className="text-xs sm:text-sm font-black text-amber-300">
+                  {currentDdayInfo.ddayText}
+                </span>
+              </button>
+
+              {/* 라이트모드 / 다크모드 선택 버튼 */}
+              <button
+                onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
+                className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-slate-200 flex items-center gap-1 transition"
+                title="라이트 모드 / 다크 모드 전환"
+              >
+                <span>{theme === "dark" ? "☀️" : "🌙"}</span>
+                <span className="hidden sm:inline">
+                  {theme === "dark" ? "라이트모드" : "다크모드"}
+                </span>
+              </button>
+
+              {/* 회원가입 / 로그인 버튼 */}
+              <button
+                onClick={() => {
+                  setAuthTab(currentUser ? "sync" : "login");
+                  setShowAuthModal(true);
+                }}
+                className={`px-2.5 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 ${
+                  currentUser
+                    ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/30"
+                    : "bg-indigo-600 hover:bg-indigo-500 border-indigo-500 text-white shadow-md shadow-indigo-600/20"
+                }`}
+              >
+                <span>👤</span>
+                <span className="max-w-[85px] sm:max-w-[140px] truncate">
+                  {currentUser ? `${currentUser.nickname}` : "로그인/가입"}
+                </span>
+              </button>
             </div>
           </div>
 
-          {/* 데스크톱/태블릿 상단 네비게이션 탭 */}
-          <nav className="hidden md:flex items-center gap-1.5 py-1">
+          {/* 2열: 데스크톱/태블릿 네비게이션 탭 */}
+          <nav className="hidden md:flex items-center gap-1.5 pt-1 border-t border-slate-800/70">
             {navTabs.map((tab) => (
               <button
                 key={tab.id}
@@ -297,7 +517,7 @@ function App() {
                   setActiveTab(tab.id);
                   window.scrollTo({ top: 0, behavior: "smooth" });
                 }}
-                className={`px-3.5 py-2 rounded-lg text-xs lg:text-sm font-semibold whitespace-nowrap transition ${
+                className={`px-3.5 py-1.5 rounded-lg text-xs lg:text-sm font-semibold whitespace-nowrap transition ${
                   activeTab === tab.id
                     ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
                     : "text-slate-300 hover:bg-slate-800 hover:text-white"
@@ -307,29 +527,10 @@ function App() {
               </button>
             ))}
           </nav>
-
-          {/* 모바일 우측 빠른 암기가림막/요약 버튼 */}
-          <div className="flex md:hidden items-center gap-1.5 shrink-0">
-            {activeTab === "summary" && (
-              <button
-                onClick={() => {
-                  setSummaryConfig((prev) => ({ ...prev, blindMode: !prev.blindMode }));
-                  setRevealedKeywords({});
-                }}
-                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border ${
-                  summaryConfig.blindMode
-                    ? "bg-amber-500 text-slate-950 border-amber-400"
-                    : "bg-slate-800 text-amber-300 border-slate-700"
-                }`}
-              >
-                {summaryConfig.blindMode ? "🙈 가림ON" : "🧠 암기모드"}
-              </button>
-            )}
-          </div>
         </div>
       </header>
 
-      {/* 모바일 전용 하단 고정 앱 탭 바 (스마트폰에서 한 손으로 조작 가능, 절대 잘리지 않음) */}
+      {/* 모바일 전용 하단 고정 앱 탭 바 */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 px-1 py-1.5 grid grid-cols-5 gap-1 no-print">
         {navTabs.map((tab) => {
           const isActive = activeTab === tab.id;
@@ -355,6 +556,459 @@ function App() {
         })}
       </nav>
 
+      {/* ================= [모달 1] 2027년 정보처리기사 · 정보보안기사 시험 일정표 팝업 ================= */}
+      {showScheduleModal && (
+        <div
+          onClick={() => setShowScheduleModal(false)}
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-4xl rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl overflow-hidden my-auto"
+          >
+            {/* 모달 헤더 */}
+            <div className="p-4 sm:p-6 bg-slate-950 border-b border-slate-800 flex items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold">
+                    2027년 공식 국가기술자격 일정
+                  </span>
+                  <span className="text-xs font-bold text-indigo-400">
+                    현재 설정: {currentDdayInfo.label} ({currentDdayInfo.ddayText})
+                  </span>
+                </div>
+                <h3 className="text-base sm:text-xl font-extrabold text-white mt-1">
+                  📅 2027년 정보처리기사 & 정보보안기사 정기 시험 일정표
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {window.EXAM_SCHEDULE_2027?.notice}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowScheduleModal(false)}
+                className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center font-bold text-sm shrink-0"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-4 sm:p-6 space-y-5 max-h-[75vh] overflow-y-auto">
+              {/* 목표 회차 D-DAY 원클릭 선택 카드 */}
+              <div>
+                <h4 className="text-xs sm:text-sm font-bold text-indigo-300 mb-2.5">
+                  🎯 내 목표 시험 회차 선택 (클릭하면 상단 D-DAY 카운터에 적용됩니다)
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  {(window.EXAM_SCHEDULE_2027?.targets || []).map((t) => {
+                    const isSelected = t.id === selectedScheduleId;
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const diff = Math.ceil(
+                      (new Date(t.date + "T00:00:00").getTime() - today.getTime()) /
+                        (1000 * 60 * 60 * 24)
+                    );
+                    const dStr = diff > 0 ? `D-${diff}` : diff === 0 ? "D-DAY" : `D+${Math.abs(diff)}`;
+
+                    return (
+                      <button
+                        key={t.id}
+                        onClick={() => handleSelectDdayTarget(t.id)}
+                        className={`p-3.5 rounded-xl border text-left transition flex flex-col justify-between gap-1.5 ${
+                          isSelected
+                            ? "bg-indigo-600/25 border-indigo-400 ring-2 ring-indigo-500/50"
+                            : "bg-slate-950/80 border-slate-800 hover:border-slate-700"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-extrabold text-white">{t.title}</span>
+                          <span
+                            className={`text-xs font-black px-2 py-0.5 rounded-md ${
+                              isSelected
+                                ? "bg-amber-500 text-slate-950"
+                                : "bg-slate-800 text-amber-300"
+                            }`}
+                          >
+                            {dStr}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-300">시험일: {t.date}</div>
+                        <div className="text-[11px] text-slate-400">원서접수: {t.applyPeriod}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 2027년 정보처리기사 / 정보보안기사 전체 일정 상세 비교표 */}
+              <div>
+                <h4 className="text-xs sm:text-sm font-bold text-indigo-300 mb-2.5">
+                  📋 2027년 정기 기사(정보처리기사 · 정보보안기사) 회차별 전체 시험 일정표
+                </h4>
+                <div className="overflow-x-auto rounded-xl border border-slate-800">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-indigo-950/60 border-b border-slate-800 text-indigo-200 font-bold">
+                        <th className="py-3 px-3 border-r border-slate-800">구분 (회차)</th>
+                        <th className="py-3 px-3 border-r border-slate-800">필기 원서접수</th>
+                        <th className="py-3 px-3 border-r border-slate-800">필기 시험기간</th>
+                        <th className="py-3 px-3 border-r border-slate-800">필기 합격발표</th>
+                        <th className="py-3 px-3 border-r border-slate-800">실기 원서접수</th>
+                        <th className="py-3 px-3 border-r border-slate-800">실기 시험기간</th>
+                        <th className="py-3 px-3">최종 합격발표</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {(window.EXAM_SCHEDULE_2027?.fullTable || []).map((row, idx) => (
+                        <tr key={idx} className="bg-slate-950/90 hover:bg-slate-900/90">
+                          <td className="py-3 px-3 border-r border-slate-800 font-extrabold text-indigo-300">
+                            <div>{row.round}</div>
+                            <div className="text-[10px] font-normal text-slate-400 mt-0.5">
+                              {row.certTypes}
+                            </div>
+                          </td>
+                          <td className="py-3 px-3 border-r border-slate-800 text-slate-200">
+                            {row.writtenApply}
+                          </td>
+                          <td className="py-3 px-3 border-r border-slate-800 font-bold text-amber-300">
+                            {row.writtenExam}
+                          </td>
+                          <td className="py-3 px-3 border-r border-slate-800 text-slate-300">
+                            {row.writtenResult}
+                          </td>
+                          <td className="py-3 px-3 border-r border-slate-800 text-slate-200">
+                            {row.practicalApply}
+                          </td>
+                          <td className="py-3 px-3 border-r border-slate-800 font-bold text-emerald-300">
+                            {row.practicalExam}
+                          </td>
+                          <td className="py-3 px-3 text-slate-300">{row.finalResult}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-950 border-t border-slate-800 flex justify-end">
+              <button
+                onClick={() => setShowScheduleModal(false)}
+                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold"
+              >
+                확인 및 닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= [모달 2] 회원가입 / 로그인 / 클라우드 기기 간 이력 동기화 팝업 ================= */}
+      {showAuthModal && (
+        <div
+          onClick={() => setShowAuthModal(false)}
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl overflow-hidden my-auto"
+          >
+            {/* 모달 헤더 */}
+            <div className="p-5 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+              <div>
+                <h3 className="text-base sm:text-lg font-extrabold text-white">
+                  👤 망키시큐리티 회원 계정 & 이력 동기화
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  아이디별로 풀이 이력과 오답노트가 저장되며 어디서든 불러올 수 있습니다.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowAuthModal(false)}
+                className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center font-bold text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* 상단 서브 탭 */}
+            <div className="grid grid-cols-3 border-b border-slate-800 bg-slate-950/60 text-xs font-bold">
+              <button
+                onClick={() => setAuthTab("login")}
+                className={`py-3 border-b-2 transition ${
+                  authTab === "login"
+                    ? "border-indigo-500 text-indigo-300 bg-slate-900"
+                    : "border-transparent text-slate-400"
+                }`}
+              >
+                🔑 로그인
+              </button>
+              <button
+                onClick={() => setAuthTab("register")}
+                className={`py-3 border-b-2 transition ${
+                  authTab === "register"
+                    ? "border-indigo-500 text-indigo-300 bg-slate-900"
+                    : "border-transparent text-slate-400"
+                }`}
+              >
+                ✨ 회원가입
+              </button>
+              <button
+                onClick={() => setAuthTab("sync")}
+                className={`py-3 border-b-2 transition ${
+                  authTab === "sync"
+                    ? "border-indigo-500 text-indigo-300 bg-slate-900"
+                    : "border-transparent text-slate-400"
+                }`}
+              >
+                ☁️ 기기 간 연동
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {/* 1) 로그인 폼 */}
+              {authTab === "login" && (
+                <form onSubmit={handleLogin} className="space-y-3.5">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      아이디 (ID)
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="가입한 아이디 입력"
+                      value={authForm.username}
+                      onChange={(e) =>
+                        setAuthForm((prev) => ({ ...prev, username: e.target.value }))
+                      }
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-slate-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      비밀번호
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="비밀번호 입력"
+                      value={authForm.password}
+                      onChange={(e) =>
+                        setAuthForm((prev) => ({ ...prev, password: e.target.value }))
+                      }
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-slate-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 mb-1">
+                      클라우드 동기화 코드 (다른 PC/스마트폰에서 처음 접속 시 입력)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="선택사항: 클라우드 코드 입력 시 원격 이력 즉시 복원"
+                      value={authForm.cloudSyncId}
+                      onChange={(e) =>
+                        setAuthForm((prev) => ({ ...prev, cloudSyncId: e.target.value }))
+                      }
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-200 font-mono"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={authForm.loading}
+                    className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-indigo-600/30"
+                  >
+                    {authForm.loading ? "⏳ 로그인 및 이력 확인 중..." : "🔑 로그인하고 내 이력 불러오기"}
+                  </button>
+                </form>
+              )}
+
+              {/* 2) 회원가입 폼 */}
+              {authTab === "register" && (
+                <form onSubmit={handleRegister} className="space-y-3.5">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      사용할 아이디 (영문/숫자 3자 이상)
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="예: mangkey01"
+                      value={authForm.username}
+                      onChange={(e) =>
+                        setAuthForm((prev) => ({ ...prev, username: e.target.value }))
+                      }
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-slate-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      닉네임 (표시 이름)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="예: 보안합격생"
+                      value={authForm.nickname}
+                      onChange={(e) =>
+                        setAuthForm((prev) => ({ ...prev, nickname: e.target.value }))
+                      }
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-slate-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      비밀번호 (4자 이상)
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="비밀번호 4자리 이상"
+                      value={authForm.password}
+                      onChange={(e) =>
+                        setAuthForm((prev) => ({ ...prev, password: e.target.value }))
+                      }
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-slate-100"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={authForm.loading}
+                    className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-emerald-600/30"
+                  >
+                    {authForm.loading ? "⏳ 계정 생성 및 클라우드 등록 중..." : "✨ 회원가입 완료하기"}
+                  </button>
+                </form>
+              )}
+
+              {/* 3) 내 계정 정보 & 어디서든 기기 간 연동 탭 */}
+              {authTab === "sync" && (
+                <div className="space-y-4">
+                  {currentUser ? (
+                    <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-xs text-slate-400">현재 로그인 계정</div>
+                          <div className="text-sm font-extrabold text-white">
+                            {currentUser.nickname}{" "}
+                            <span className="text-xs font-normal text-indigo-400">
+                              (@{currentUser.username})
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={handleLogout}
+                          className="px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-xs font-bold"
+                        >
+                          로그아웃
+                        </button>
+                      </div>
+
+                      <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 text-xs space-y-1">
+                        <div className="text-slate-400 font-semibold">
+                          ☁️ 내 클라우드 동기화 코드 (다른 기기 로그인용):
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <code className="text-amber-300 font-mono break-all">
+                            {currentUser.cloudId || "아래 [클라우드 지금 동기화] 버튼을 눌러 발급"}
+                          </code>
+                          {currentUser.cloudId && (
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(currentUser.cloudId);
+                                showToast("클라우드 동기화 코드가 복사되었습니다!", "success");
+                              }}
+                              className="px-2 py-1 rounded bg-slate-800 text-slate-200 text-[11px] shrink-0"
+                            >
+                              복사
+                            </button>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-400 pt-1">
+                          ※ 스마트폰이나 다른 PC에서 로그인할 때 아이디/비밀번호와 함께 위 코드를 입력하면 모든 이력이 즉시 연동됩니다.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 pt-1">
+                        <button
+                          disabled={authForm.loading}
+                          onClick={handleCloudPush}
+                          className="py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold"
+                        >
+                          ☁️ 클라우드 지금 저장
+                        </button>
+                        <button
+                          disabled={authForm.loading}
+                          onClick={handleCloudPull}
+                          className="py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold"
+                        >
+                          📥 클라우드 이력 불러오기
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-center space-y-2">
+                      <p className="text-xs text-slate-300">
+                        현재 비로그인(게스트) 상태입니다. 회원가입 또는 로그인을 하시면 아이디별로 이력이 안전하게 관리됩니다.
+                      </p>
+                      <button
+                        onClick={() => setAuthTab("register")}
+                        className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold"
+                      >
+                        ✨ 10초 회원가입 하러가기
+                      </button>
+                    </div>
+                  )}
+
+                  {/* 휴대용 이력 백업 코드 내보내기 / 가져오기 */}
+                  <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-300">
+                        📦 휴대용 전체 이력 백업 코드 (카카오톡/메모장 전송용)
+                      </span>
+                      <button
+                        onClick={() => {
+                          const code = window.InfoSecEngine.exportBackupCode();
+                          navigator.clipboard.writeText(code);
+                          showToast("전체 학습 이력 백업 코드가 클립보드에 복사되었습니다!", "success");
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-bold"
+                      >
+                        📋 내 이력 코드 복사
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="복사한 이력 백업 코드를 여기에 붙여넣기..."
+                        value={authForm.backupCodeInput}
+                        onChange={(e) =>
+                          setAuthForm((prev) => ({ ...prev, backupCodeInput: e.target.value }))
+                        }
+                        className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200"
+                      />
+                      <button
+                        onClick={() => {
+                          try {
+                            window.InfoSecEngine.importBackupCode(authForm.backupCodeInput);
+                            refreshData();
+                            setAuthForm((prev) => ({ ...prev, backupCodeInput: "" }));
+                            showToast("학습 이력과 계정 정보가 완벽히 복원되었습니다!", "success");
+                          } catch (e) {
+                            showToast("유효하지 않은 백업 코드입니다.", "warn");
+                          }
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 shrink-0"
+                      >
+                        복원
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 알림 토스트 */}
       {toast && (
         <div className="fixed bottom-16 md:bottom-6 left-4 right-4 md:left-auto md:right-6 z-50 md:max-w-md px-4 py-3 rounded-xl shadow-2xl border bg-slate-900 border-indigo-500/50 text-xs sm:text-sm flex items-center gap-2.5 no-print">
@@ -372,15 +1026,25 @@ function App() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-5">
               <div className="lg:col-span-2 p-4 sm:p-6 rounded-2xl bg-gradient-to-br from-indigo-950/80 via-slate-900 to-slate-900 border border-indigo-500/30 flex flex-col justify-between">
                 <div>
-                  <span className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs font-semibold px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-300 mb-2.5">
-                    🎯 합격 기준: 과목당 40점 이상, 평균 60점 이상
-                  </span>
+                  <div className="flex flex-wrap items-center gap-2 mb-3">
+                    <span className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs font-semibold px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-300">
+                      🎯 과목당 40점 이상, 평균 60점 이상 합격
+                    </span>
+                    <button
+                      onClick={() => setShowScheduleModal(true)}
+                      className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs font-bold px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30 transition"
+                    >
+                      📅 {currentDdayInfo.label} ({currentDdayInfo.ddayText}) · 일정표 보기 →
+                    </button>
+                  </div>
                   <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-white mb-2 leading-snug">
-                    정보보안기사 필기 합격을 향해 달려볼까요?
+                    {currentUser
+                      ? `${currentUser.nickname}님, 망키시큐리티와 함께 필기 합격까지 달려볼까요?`
+                      : "망키시큐리티 필기 기출 & 핵심 요약 시스템"}
                   </h2>
                   <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-                    현재 문제 은행에 총 <strong className="text-indigo-400">{totalStats.total}문항</strong>의 핵심 기출 및 변형 문제가 준비되어 있습니다.
-                    랜덤 모의고사를 풀거나 비주얼 요약본으로 핵심을 정리해보세요.
+                    현재 총 <strong className="text-indigo-400">{totalStats.total}문항</strong>(2022~2026년 연도별 기출 및 변형)이 준비되어 있습니다.
+                    연도별 모의고사를 풀거나 비주얼 요약본으로 단기간에 합격 점수를 완성하세요.
                   </p>
                 </div>
                 <div className="mt-4 sm:mt-6 grid grid-cols-1 sm:flex sm:flex-wrap gap-2.5">
@@ -389,6 +1053,7 @@ function App() {
                       startRandomExam({
                         ...examConfig,
                         subjectIds: [1, 2, 3, 4, 5],
+                        yearFilter: "all",
                         count: 10,
                         mode: "all",
                         solveStyle: "study"
@@ -396,22 +1061,13 @@ function App() {
                     }
                     className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs sm:text-sm shadow-lg shadow-indigo-600/30 transition text-center"
                   >
-                    🎲 전 과목 랜덤 10제 풀기 (학습모드)
+                    🎲 전 과목 랜덤 10제 바로 풀기
                   </button>
                   <button
-                    onClick={() =>
-                      startRandomExam({
-                        ...examConfig,
-                        subjectIds: [1, 2, 3, 4, 5],
-                        count: 20,
-                        mode: "all",
-                        solveStyle: "real",
-                        includeSmartVariations: true
-                      })
-                    }
+                    onClick={() => setActiveTab("exam")}
                     className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 text-white font-semibold text-xs sm:text-sm shadow-lg shadow-emerald-600/20 transition text-center"
                   >
-                    ⏱️ 실전 기출+변형 모의고사 20제
+                    📅 연도별(2022~2026) 기출 골라 풀기
                   </button>
                   <button
                     onClick={() => setActiveTab("summary")}
@@ -422,11 +1078,22 @@ function App() {
                 </div>
               </div>
 
-              {/* 전체 학습 통계 요약 */}
+              {/* 전체 학습 통계 요약 & 오답 바로가기/초기화 */}
               <div className="p-4 sm:p-6 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col justify-between">
-                <h3 className="text-xs sm:text-sm font-semibold text-slate-400 uppercase tracking-wider">
-                  나의 누적 학습 현황
-                </h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs sm:text-sm font-semibold text-slate-400 uppercase tracking-wider">
+                    {currentUser ? `${currentUser.nickname}님의 학습 이력` : "나의 누적 학습 현황"}
+                  </h3>
+                  {totalStats.attempts > 0 && (
+                    <button
+                      onClick={handleResetAllHistory}
+                      className="text-[11px] text-slate-400 hover:text-rose-400 underline"
+                    >
+                      전체기록 초기화
+                    </button>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-2 gap-2.5 sm:gap-3.5 my-3 sm:my-4">
                   <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800/80">
                     <div className="text-[11px] sm:text-xs text-slate-400">평균 정답률</div>
@@ -446,37 +1113,50 @@ function App() {
                       고유 {totalStats.solved} / {totalStats.total}문항
                     </div>
                   </div>
-                  <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800/80">
-                    <div className="text-[11px] sm:text-xs text-slate-400">복습할 오답</div>
+                  {/* 복습할 오답 카드 (클릭 시 오답노트로 즉시 이동!) */}
+                  <div
+                    onClick={() => setActiveTab("wrongnote")}
+                    className="p-3 rounded-xl bg-slate-950/70 border border-rose-500/30 hover:border-rose-500 cursor-pointer transition"
+                  >
+                    <div className="text-[11px] sm:text-xs text-rose-300 flex items-center justify-between">
+                      <span>복습할 오답</span>
+                      <span>이동 →</span>
+                    </div>
                     <div className="text-xl sm:text-2xl font-extrabold text-rose-400 mt-1">
                       {totalStats.wrong}문항
                     </div>
-                    <div className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5">오답노트 자동 연동</div>
+                    <div className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5">
+                      클릭하여 오답노트 확인
+                    </div>
                   </div>
-                  <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800/80">
+                  <div
+                    onClick={() => setActiveTab("wrongnote")}
+                    className="p-3 rounded-xl bg-slate-950/70 border border-slate-800/80 hover:border-amber-500/50 cursor-pointer transition"
+                  >
                     <div className="text-[11px] sm:text-xs text-slate-400">중요 북마크</div>
                     <div className="text-xl sm:text-2xl font-extrabold text-amber-400 mt-1">
                       {bookmarks.length}문항
                     </div>
-                    <div className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5">시험 직전 필수 체크</div>
+                    <div className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5">
+                      클릭하여 북마크 확인
+                    </div>
                   </div>
                 </div>
-                {totalStats.wrong > 0 && (
+
+                <div className="grid grid-cols-2 gap-2">
                   <button
-                    onClick={() =>
-                      startRandomExam({
-                        ...examConfig,
-                        subjectIds: [1, 2, 3, 4, 5],
-                        count: totalStats.wrong,
-                        mode: "wrong_only",
-                        solveStyle: "study"
-                      })
-                    }
-                    className="w-full py-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-xs font-semibold transition"
+                    onClick={() => setActiveTab("wrongnote")}
+                    className="py-2.5 px-3 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-xs font-bold transition"
                   >
-                    🚨 틀린 오답 문제({totalStats.wrong}문항)만 다시 풀기
+                    ❌ 오답노트 바로가기 ({totalStats.wrong})
                   </button>
-                )}
+                  <button
+                    onClick={() => handleClearWrongNotes()}
+                    className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-bold transition"
+                  >
+                    🗑️ 오답 초기화
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -565,26 +1245,67 @@ function App() {
           </div>
         )}
 
-        {/* ================= 2. 랜덤 기출 & 모의고사 탭 ================= */}
+        {/* ================= 2. 연도별·랜덤 기출 & 모의고사 탭 ================= */}
         {activeTab === "exam" && (
           <div className="space-y-4 sm:space-y-6">
-            {/* 상단 출제 설정 패널 */}
-            <div className="p-4 sm:p-5 rounded-2xl bg-slate-900 border border-slate-800">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+            {/* 상단 출제 설정 패널 (연도별 기출 선택 추가!) */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-base sm:text-lg font-bold text-white">🎲 랜덤 기출문제 생성기 설정</h2>
+                  <h2 className="text-base sm:text-lg font-bold text-white">
+                    🎲 연도별 · 과목별 기출문제 생성기
+                  </h2>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    과목, 문항 수, 선지 셔플 및 스마트 변형 옵션을 조합하여 새로운 시험지를 생성합니다.
+                    기출 연도(2022~2026년), 과목, 문항 수를 선택하여 맞춤형 모의고사를 시작하세요.
                   </p>
                 </div>
                 <button
                   onClick={() => startRandomExam()}
                   className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-indigo-600/30 transition shrink-0"
                 >
-                  🔄 새 랜덤 기출 생성 및 시작
+                  🔄 선택한 조건으로 시험지 생성 및 시작
                 </button>
               </div>
 
+              {/* ★ 1단계: 기출 연도 선택 바 ★ */}
+              <div className="pt-3 border-t border-slate-800">
+                <label className="block text-xs font-bold text-indigo-300 mb-2">
+                  📅 기출 출제 연도 선택 (원하는 연도를 클릭하면 해당 연도 기출로 출제됩니다)
+                </label>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    onClick={() => setExamConfig((prev) => ({ ...prev, yearFilter: "all" }))}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
+                      examConfig.yearFilter === "all"
+                        ? "bg-indigo-600 text-white border-indigo-400 shadow-md shadow-indigo-600/20"
+                        : "bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700"
+                    }`}
+                  >
+                    전체 연도 통합 ({questions.length}문항)
+                  </button>
+                  {availableYears.map((yr) => {
+                    const yrCount = questions.filter(
+                      (q) => window.InfoSecEngine.extractYearNumber(q.year) === yr
+                    ).length;
+                    const active = examConfig.yearFilter === yr;
+                    return (
+                      <button
+                        key={yr}
+                        onClick={() => setExamConfig((prev) => ({ ...prev, yearFilter: yr }))}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
+                          active
+                            ? "bg-amber-500 text-slate-950 border-amber-400 shadow-md shadow-amber-500/20"
+                            : "bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700"
+                        }`}
+                      >
+                        {yr}년 기출 ({yrCount}문항)
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 2단계: 과목, 문항 수, 풀이 방식 설정 */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3.5 pt-3 border-t border-slate-800">
                 {/* 과목 필터 */}
                 <div className="md:col-span-2">
@@ -733,31 +1454,51 @@ function App() {
               </div>
             </div>
 
-            {/* 시험지가 아직 없을 때 안내 */}
+            {/* 시험지가 아직 없을 때 연도별 빠른 시작 카드 */}
             {!examSession && (
-              <div className="p-8 sm:p-12 rounded-2xl bg-slate-900/60 border border-dashed border-slate-800 text-center">
-                <div className="text-3xl sm:text-4xl mb-3">🎲</div>
-                <h3 className="text-base sm:text-lg font-bold text-white mb-1">
-                  [새 랜덤 기출 생성 및 시작] 버튼을 눌러 모의고사를 시작하세요
-                </h3>
-                <p className="text-xs text-slate-400 mb-5">
-                  매번 문제 순서와 4지선다 보기가 랜덤으로 섞여 단순 번호 암기를 방지합니다.
-                </p>
-                <button
-                  onClick={() => startRandomExam()}
-                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs sm:text-sm"
-                >
-                  지금 바로 10문항 시작하기
-                </button>
+              <div className="p-6 sm:p-10 rounded-2xl bg-slate-900/60 border border-dashed border-slate-800 text-center space-y-4">
+                <div className="text-3xl sm:text-4xl">🎲</div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-bold text-white mb-1">
+                    연도별 기출 또는 랜덤 모의고사를 바로 시작해보세요!
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    현재 선택된 연도:{" "}
+                    <strong className="text-amber-300">
+                      {examConfig.yearFilter === "all" ? "전체 연도 통합" : `${examConfig.yearFilter}년 기출`}
+                    </strong>{" "}
+                    · 문항 수: <strong className="text-indigo-300">{examConfig.count}문항</strong>
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <button
+                    onClick={() => startRandomExam()}
+                    className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-indigo-600/30"
+                  >
+                    🚀 현재 설정으로 바로 시작하기
+                  </button>
+                  {availableYears.map((yr) => (
+                    <button
+                      key={yr}
+                      onClick={() => {
+                        const nextCfg = { ...examConfig, yearFilter: yr, count: 10 };
+                        setExamConfig(nextCfg);
+                        startRandomExam(nextCfg);
+                      }}
+                      className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700"
+                    >
+                      📅 {yr}년 기출 풀기
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 
             {/* 시험 진행 중 또는 결과 화면 */}
             {examSession && (
               <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 sm:gap-6">
-                {/* 좌측/중앙: 현재 문제 풀이 영역 */}
                 <div className="lg:col-span-3 space-y-4 min-w-0">
-                  {/* 결과 요약 배너 (시험 종료 시) */}
+                  {/* 결과 요약 배너 (시험 종료 시 -> 오답노트 바로가기 버튼 포함) */}
                   {examSession.finished && (
                     <div className="p-4 sm:p-6 rounded-2xl bg-gradient-to-r from-indigo-950 via-slate-900 to-slate-900 border border-indigo-500/40">
                       {(() => {
@@ -766,26 +1507,33 @@ function App() {
                         examSession.list.forEach((q, idx) => {
                           if (examSession.answers[idx] === q.answer) correctCnt++;
                         });
+                        const wrongCnt = total - correctCnt;
                         const score = Math.round((correctCnt / total) * 100);
                         return (
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div>
                               <span className="text-xs font-bold uppercase tracking-wider text-indigo-400">
-                                모의고사 채점 결과
+                                모의고사 채점 결과 ({examSession.yearFilter === "all" ? "전체 연도" : `${examSession.yearFilter}년 기출`})
                               </span>
                               <h3 className="text-xl sm:text-2xl font-black text-white mt-1">
                                 {score}점{" "}
                                 <span className="text-sm sm:text-base font-normal text-slate-300">
-                                  ({correctCnt}/{total}정답 · {formatTime(examSession.elapsedSec)})
+                                  ({correctCnt}/{total}정답 · 오답 {wrongCnt}개 · {formatTime(examSession.elapsedSec)})
                                 </span>
                               </h3>
                               <p className="text-xs text-slate-300 mt-1">
                                 {score >= 60
                                   ? "🎉 합격 기준(60점)을 통과했습니다!"
-                                  : "💪 오답 문제는 자동으로 오답노트와 맞춤 요약본에 반영되었습니다."}
+                                  : "💪 틀린 문제는 오답노트에 자동 기록되었습니다. 오답노트에서 바로 복습해보세요!"}
                               </p>
                             </div>
                             <div className="flex flex-wrap gap-2">
+                              <button
+                                onClick={() => setActiveTab("wrongnote")}
+                                className="flex-1 sm:flex-initial px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-md shadow-rose-600/20"
+                              >
+                                ❌ 오답노트로 바로 이동 ({totalStats.wrong})
+                              </button>
                               <button
                                 onClick={() => setActiveTab("summary")}
                                 className="flex-1 sm:flex-initial px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold"
@@ -833,8 +1581,8 @@ function App() {
                                 {subj.shortName}
                               </span>
                             )}
-                            <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[11px]">
-                              {currentQ.year}
+                            <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[11px] font-bold">
+                              📅 {currentQ.year}
                             </span>
                           </div>
 
@@ -913,11 +1661,11 @@ function App() {
                           })}
                         </div>
 
-                        {/* 정답 및 해설 & 한 줄 요약 박스 */}
+                        {/* 정답 및 해설 & 오답노트 바로가기 */}
                         {showAnswer && (
                           <div className="mt-5 p-4 sm:p-5 rounded-xl bg-slate-950 border border-indigo-500/30 space-y-3">
                             <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <span
                                   className={`px-2.5 py-1 rounded-md text-xs font-bold ${
                                     userSelected === currentQ.answer
@@ -925,23 +1673,19 @@ function App() {
                                       : "bg-rose-500/20 text-rose-300"
                                   }`}
                                 >
-                                  {userSelected === currentQ.answer ? "⭕ 정답입니다!" : "❌ 오답입니다"}
+                                  {userSelected === currentQ.answer ? "⭕ 정답입니다!" : "❌ 오답입니다 (오답노트 자동저장)"}
                                 </span>
                                 <span className="text-xs font-bold text-indigo-300">
                                   정답: {currentQ.answer + 1}번
                                 </span>
                               </div>
-                              {currentQ.tags && (
-                                <div className="flex flex-wrap gap-1">
-                                  {currentQ.tags.map((t, i) => (
-                                    <span
-                                      key={i}
-                                      className="text-[11px] px-2 py-0.5 rounded bg-slate-800 text-slate-300"
-                                    >
-                                      #{t}
-                                    </span>
-                                  ))}
-                                </div>
+                              {userSelected !== undefined && userSelected !== currentQ.answer && (
+                                <button
+                                  onClick={() => setActiveTab("wrongnote")}
+                                  className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-xs font-bold"
+                                >
+                                  ❌ 오답노트로 이동 →
+                                </button>
                               )}
                             </div>
 
@@ -1034,7 +1778,7 @@ function App() {
                         {Object.keys(examSession.answers).length} / {examSession.list.length} 체크
                       </span>
                     </div>
-                    <div className="grid grid-cols-5 gap-1.5">
+                    <div className="grid grid-cols-5 gap-1.5 max-h-72 overflow-y-auto pr-1">
                       {examSession.list.map((q, idx) => {
                         const ans = examSession.answers[idx];
                         const isCurr = examSession.currentIndex === idx;
@@ -1082,16 +1826,15 @@ function App() {
           </div>
         )}
 
-        {/* ================= 3. 핵심 요약본 생성기 탭 (모바일 & 데스크톱 완벽 대응) ================= */}
+        {/* ================= 3. 핵심 요약본 생성기 탭 ================= */}
         {activeTab === "summary" && (
           <div className="space-y-4 sm:space-y-6">
-            {/* 상단 컨트롤 & 뷰 모드 선택 바 */}
             <div className="p-3.5 sm:p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3.5 no-print">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <h2 className="text-base sm:text-lg md:text-xl font-bold text-white">
-                      📝 한눈에 들어오는 비주얼 핵심 요약집
+                      📝 망키시큐리티 비주얼 핵심 요약집
                     </h2>
                     <span className="text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
                       비교표 · 기출함정 · 단답족보
@@ -1102,7 +1845,6 @@ function App() {
                   </p>
                 </div>
 
-                {/* 액션 버튼들 */}
                 <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                   <button
                     onClick={() => {
@@ -1117,7 +1859,6 @@ function App() {
                   >
                     {summaryConfig.blindMode ? "🙈 암기가림막 ON" : "🧠 암기 가림막"}
                   </button>
-                  {/* 모바일 전용: 표 보기 방식 토글 (카드뷰 vs 표 가로스크롤) */}
                   <button
                     onClick={() =>
                       setSummaryConfig((prev) => ({
@@ -1146,7 +1887,7 @@ function App() {
                       const url = URL.createObjectURL(blob);
                       const a = document.createElement("a");
                       a.href = url;
-                      a.download = `정보보안기사_비주얼핵심요약본_${new Date().toISOString().slice(0, 10)}.md`;
+                      a.download = `망키시큐리티_핵심요약본_${new Date().toISOString().slice(0, 10)}.md`;
                       a.click();
                       URL.revokeObjectURL(url);
                       showToast("마크다운(.md) 파일이 다운로드되었습니다!", "success");
@@ -1158,18 +1899,11 @@ function App() {
                 </div>
               </div>
 
-              {/* 뷰 모드 전환 탭 (모바일에서는 세로/가로 꽉 차게 배치) */}
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 pt-3 border-t border-slate-800">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 sm:gap-2">
                   {[
-                    {
-                      id: "visual",
-                      label: "📊 과목별 비교표 & 함정 노트"
-                    },
-                    {
-                      id: "cheatsheet",
-                      label: "⚡ 시험직전 숫자·명령어 족보"
-                    },
+                    { id: "visual", label: "📊 과목별 비교표 & 함정 노트" },
+                    { id: "cheatsheet", label: "⚡ 시험직전 숫자·명령어 족보" },
                     {
                       id: "mynotes",
                       label: `🚨 내 오답(${customSummary.wrongQuestions.length})·북마크(${customSummary.bookmarkedQuestions.length})`
@@ -1189,7 +1923,6 @@ function App() {
                   ))}
                 </div>
 
-                {/* 키워드 즉시 검색 (모바일 w-full, 데스크톱 w-64) */}
                 <div className="flex items-center gap-2 w-full lg:w-auto">
                   <input
                     type="text"
@@ -1211,7 +1944,6 @@ function App() {
                 </div>
               </div>
 
-              {/* 과목 빠른 선택 탭 (모바일에서도 한눈에 눌리는 그리드/칩) */}
               {summaryConfig.viewMode === "visual" && (
                 <div className="pt-3 border-t border-slate-800/80">
                   <div className="grid grid-cols-3 sm:flex sm:flex-wrap items-center gap-1.5">
@@ -1261,7 +1993,7 @@ function App() {
               )}
             </div>
 
-            {/* ================= [VIEW 1] 시험 직전 필수 숫자·명령어·공식 초압축 족보 ================= */}
+            {/* [VIEW 1] 시험 직전 필수 숫자·명령어·공식 초압축 족보 */}
             {summaryConfig.viewMode === "cheatsheet" && (
               <div className="space-y-4 sm:space-y-5">
                 <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-amber-950/40 via-slate-900 to-indigo-950/40 border border-amber-500/30 flex flex-wrap items-center justify-between gap-2">
@@ -1338,7 +2070,7 @@ function App() {
               </div>
             )}
 
-            {/* ================= [VIEW 2] 내 오답 & 북마크 전용 요약 뷰 ================= */}
+            {/* [VIEW 2] 내 오답 & 북마크 전용 요약 뷰 */}
             {summaryConfig.viewMode === "mynotes" && (
               <div className="space-y-5">
                 <div className="p-4 sm:p-6 rounded-2xl bg-rose-950/20 border border-rose-500/40 space-y-4">
@@ -1347,20 +2079,28 @@ function App() {
                       🚨 최우선 암기! 내가 틀린 문제 핵심 요점 ({customSummary.wrongQuestions.length}건)
                     </h3>
                     {customSummary.wrongQuestions.length > 0 && (
-                      <button
-                        onClick={() =>
-                          startRandomExam({
-                            ...examConfig,
-                            subjectIds: [1, 2, 3, 4, 5],
-                            count: customSummary.wrongQuestions.length,
-                            mode: "wrong_only",
-                            solveStyle: "study"
-                          })
-                        }
-                        className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold"
-                      >
-                        🎲 오답만 재시험 보기
-                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() =>
+                            startRandomExam({
+                              ...examConfig,
+                              subjectIds: [1, 2, 3, 4, 5],
+                              count: customSummary.wrongQuestions.length,
+                              mode: "wrong_only",
+                              solveStyle: "study"
+                            })
+                          }
+                          className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold"
+                        >
+                          🎲 오답만 재시험
+                        </button>
+                        <button
+                          onClick={() => handleClearWrongNotes()}
+                          className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold"
+                        >
+                          🗑️ 오답 초기화
+                        </button>
+                      </div>
                     )}
                   </div>
                   {customSummary.wrongQuestions.length === 0 ? (
@@ -1378,7 +2118,12 @@ function App() {
                             <span className="text-xs font-bold px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 truncate">
                               {wq.tags ? wq.tags.join(" · ") : wq.id}
                             </span>
-                            <span className="text-[11px] text-slate-400 shrink-0">{wq.year}</span>
+                            <button
+                              onClick={() => handleClearSingleWrong(wq.id)}
+                              className="text-[11px] text-emerald-400 hover:underline shrink-0"
+                            >
+                              ✅ 오답 해제
+                            </button>
                           </div>
                           <div className="text-xs text-slate-400 line-clamp-1">{wq.question}</div>
                           <div className="text-xs sm:text-sm font-semibold text-amber-200 bg-slate-950 p-3 rounded-lg border border-slate-800 break-words">
@@ -1423,7 +2168,7 @@ function App() {
               </div>
             )}
 
-            {/* ================= [VIEW 3] 과목별 비주얼 비교표 & 기출함정 상세 요약집 ================= */}
+            {/* [VIEW 3] 과목별 비주얼 비교표 & 기출함정 상세 요약집 */}
             {summaryConfig.viewMode === "visual" && (
               <div className="space-y-6">
                 {customSummary.subjectBlocks.map((block) => {
@@ -1433,7 +2178,6 @@ function App() {
                       key={block.subject.id}
                       className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden shadow-xl"
                     >
-                      {/* 과목 헤더 배너 */}
                       <div className="p-4 sm:p-6 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border-b border-slate-800 space-y-3">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                           <div className="flex items-center gap-2.5 flex-wrap">
@@ -1474,7 +2218,6 @@ function App() {
                           </p>
                         )}
 
-                        {/* 단원 빠른 이동 목차 */}
                         <div className="flex flex-wrap items-center gap-1.5 pt-1 no-print">
                           {block.baseSummary.sections.map((sec, idx) => (
                             <a
@@ -1488,7 +2231,6 @@ function App() {
                         </div>
                       </div>
 
-                      {/* 단원별 상세 비주얼 카드 & 비교 테이블 */}
                       <div className="p-3 sm:p-6 space-y-5 sm:space-y-8">
                         {block.baseSummary.sections.map((sec, sIdx) => (
                           <div
@@ -1496,7 +2238,6 @@ function App() {
                             id={sec.id || `sec_${block.subject.id}_${sIdx}`}
                             className="rounded-2xl bg-slate-950/70 border border-slate-800/90 overflow-hidden"
                           >
-                            {/* 단원 타이틀 & 출제 중요도 배지 */}
                             <div className="px-3.5 sm:px-5 py-3 sm:py-4 bg-slate-900/70 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
                               <h4 className="text-sm sm:text-base md:text-lg font-extrabold text-white flex items-center gap-2">
                                 <span className="w-1.5 h-4 sm:w-2 sm:h-5 rounded-full bg-indigo-500 inline-block shrink-0" />
@@ -1516,7 +2257,7 @@ function App() {
                                 </p>
                               )}
 
-                              {/* ★ 모바일 전용 카드형 비교 뷰 (화면에 100% 딱 맞게 들어가며 절대 잘리지 않음!) ★ */}
+                              {/* 모바일 전용 카드형 비교 뷰 */}
                               {sec.table && summaryConfig.mobileTableAsCards && (
                                 <div className="md:hidden space-y-2.5">
                                   {sec.table.rows.map((row, rIdx) => (
@@ -1524,7 +2265,6 @@ function App() {
                                       key={rIdx}
                                       className="p-3.5 rounded-xl bg-slate-900/95 border border-slate-800 space-y-2"
                                     >
-                                      {/* 첫 번째 컬럼을 카드의 헤더 타이틀로 표시 */}
                                       <div className="pb-2 border-b border-slate-800 flex items-start justify-between gap-2">
                                         <span className="font-extrabold text-sm text-indigo-300 whitespace-pre-line">
                                           {row[0]}
@@ -1534,7 +2274,6 @@ function App() {
                                         </span>
                                       </div>
 
-                                      {/* 나머지 컬럼들을 라벨: 값 형태로 깔끔하게 정렬 */}
                                       <div className="space-y-1.5 text-xs">
                                         {row.slice(1).map((cell, cIdx) => {
                                           const realColIdx = cIdx + 1;
@@ -1577,7 +2316,7 @@ function App() {
                                 </div>
                               )}
 
-                              {/* ★ 데스크톱 비교 테이블 (또는 모바일에서 표 형태 보기 선택 시) ★ */}
+                              {/* 데스크톱 비교 테이블 */}
                               {sec.table && (
                                 <div
                                   className={`${
@@ -1645,7 +2384,6 @@ function App() {
                                 </div>
                               )}
 
-                              {/* 추가 핵심 요약 불릿 */}
                               {sec.bullets && sec.bullets.length > 0 && (
                                 <div className="p-3.5 sm:p-4 rounded-xl bg-slate-900/80 border border-slate-800/90 space-y-2">
                                   <div className="text-xs font-bold text-indigo-400">
@@ -1664,7 +2402,6 @@ function App() {
                                 </div>
                               )}
 
-                              {/* ⚠️ 기출 함정 주의보 */}
                               {sec.trap && (
                                 <div className="p-3.5 sm:p-4 rounded-xl bg-gradient-to-r from-rose-950/40 via-amber-950/30 to-slate-950 border border-rose-500/40 text-xs sm:text-sm text-rose-100 leading-relaxed flex items-start gap-2.5 break-words">
                                   <span className="text-base sm:text-lg shrink-0">🚨</span>
@@ -1680,7 +2417,6 @@ function App() {
                           </div>
                         ))}
 
-                        {/* 해당 과목 기출문제에서 추출된 한 줄 암기 요점 2열 카드 그리드 */}
                         {block.keyPoints.length > 0 && (
                           <div className="p-3.5 sm:p-5 rounded-2xl bg-indigo-950/20 border border-indigo-500/30 space-y-3">
                             <div className="flex flex-wrap items-center justify-between gap-1">
@@ -1747,14 +2483,16 @@ function App() {
           </div>
         )}
 
-        {/* ================= 4. 오답노트 & 북마크 탭 ================= */}
+        {/* ================= 4. 오답노트 & 북마크 탭 (오답 초기화 기능 포함!) ================= */}
         {activeTab === "wrongnote" && (
           <div className="space-y-4 sm:space-y-6">
             <div className="p-4 sm:p-5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <h2 className="text-base sm:text-lg font-bold text-white">❌ 오답노트 & ⭐ 북마크 집중 복습</h2>
+                <h2 className="text-base sm:text-lg font-bold text-white">
+                  ❌ 오답노트 ({totalStats.wrong}문항) & ⭐ 북마크 ({bookmarks.length}문항)
+                </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  틀렸거나 별표한 문제들을 한눈에 복습하고 오답만 모아 재시험을 볼 수 있습니다.
+                  틀린 문제들을 집중 복습하고, 복습이 끝난 오답은 개별 해제하거나 [오답 전체 초기화] 버튼으로 비울 수 있습니다.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -1771,6 +2509,12 @@ function App() {
                   className="flex-1 sm:flex-initial px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold"
                 >
                   🚨 오답만 다시 풀기
+                </button>
+                <button
+                  onClick={() => handleClearWrongNotes()}
+                  className="flex-1 sm:flex-initial px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-rose-950 text-rose-300 border border-rose-500/40 text-xs font-bold transition"
+                >
+                  🗑️ 오답 전체 초기화
                 </button>
                 <button
                   onClick={() =>
@@ -1795,14 +2539,20 @@ function App() {
               );
               if (targetList.length === 0) {
                 return (
-                  <div className="p-8 sm:p-12 rounded-2xl bg-slate-900/60 border border-dashed border-slate-800 text-center">
-                    <div className="text-3xl mb-2">✨</div>
-                    <h3 className="text-sm sm:text-base font-bold text-white mb-1">
+                  <div className="p-8 sm:p-12 rounded-2xl bg-slate-900/60 border border-dashed border-slate-800 text-center space-y-3">
+                    <div className="text-3xl">✨</div>
+                    <h3 className="text-sm sm:text-base font-bold text-white">
                       현재 등록된 오답이나 북마크 문제가 없습니다
                     </h3>
                     <p className="text-xs text-slate-400">
-                      랜덤 기출 모의고사를 풀면서 틀린 문제나 별표한 문제가 이곳에 자동으로 기록됩니다.
+                      모의고사를 풀면서 틀린 문제가 생기면 이곳에 자동으로 추가됩니다.
                     </p>
+                    <button
+                      onClick={() => setActiveTab("exam")}
+                      className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold"
+                    >
+                      🎲 모의고사 풀러 가기
+                    </button>
                   </div>
                 );
               }
@@ -1822,7 +2572,7 @@ function App() {
                           <div className="flex flex-wrap items-center gap-1.5">
                             {isWrong && (
                               <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 text-xs font-bold border border-rose-500/30">
-                                🚨 최근 오답
+                                🚨 오답
                               </span>
                             )}
                             {isBm && (
@@ -1835,8 +2585,17 @@ function App() {
                                 {subj.shortName}
                               </span>
                             )}
+                            <span className="text-xs text-slate-400">({q.year})</span>
                           </div>
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {isWrong && (
+                              <button
+                                onClick={() => handleClearSingleWrong(q.id)}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 text-xs font-bold"
+                              >
+                                ✅ 오답 해제(복습완료)
+                              </button>
+                            )}
                             <button
                               onClick={() => handleInstantVariation(q)}
                               className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-semibold"
@@ -1847,7 +2606,7 @@ function App() {
                               onClick={() => handleToggleBookmark(q.id)}
                               className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs"
                             >
-                              {isBm ? "해제" : "북마크"}
+                              {isBm ? "북마크 해제" : "북마크"}
                             </button>
                           </div>
                         </div>
@@ -1893,7 +2652,6 @@ function App() {
         {/* ================= 5. 기출 추가 & AI 변형 생성 탭 ================= */}
         {activeTab === "manager" && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-            {/* 좌측: AI / 스마트 기출 변형 문제 생성기 */}
             <div className="p-4 sm:p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
               <div>
                 <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-300">
@@ -1985,7 +2743,6 @@ function App() {
               </div>
             </div>
 
-            {/* 우측: 기출 지문 텍스트 / JSON 일괄 파싱 업로드 */}
             <div className="p-4 sm:p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
               <div>
                 <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300">
@@ -2056,7 +2813,7 @@ function App() {
 
       {/* 하단 푸터 */}
       <footer className="border-t border-slate-900 py-4 px-4 text-center text-[11px] sm:text-xs text-slate-500 no-print">
-        SecuMaster 정보보안기사 필기 학습 시스템
+        🛡️ 망키시큐리티 (Mangkey Security) · 정보보안기사 & 정보처리기사 필기 기출 생성 및 비주얼 요약 시스템
       </footer>
     </div>
   );
