@@ -68,23 +68,39 @@
       background-color: #cbd5e1 !important;
       color: #0f172a !important;
     }
-    /* 그라데이션 배너 라이트모드 보정 */
-    body.light-mode .from-indigo-950\/80,
-    body.light-mode .from-indigo-950,
-    body.light-mode .from-slate-950 {
-      --tw-gradient-from: #eef2ff !important;
-      --tw-gradient-via: #ffffff !important;
-      --tw-gradient-to: #f8fafc !important;
+    /* 그라데이션 배너 라이트모드 완벽 보정 (어두운 배경색 완전 제거 및 선명한 파스텔 배경 적용) */
+    body.light-mode .bg-gradient-to-br,
+    body.light-mode .bg-gradient-to-r {
+      background-image: linear-gradient(135deg, #eef2ff 0%, #ffffff 50%, #f0fdf4 100%) !important;
+      background-color: #ffffff !important;
+      color: #0f172a !important;
+      border-color: #c7d2fe !important;
     }
-    body.light-mode .from-amber-950\/40 {
-      --tw-gradient-from: #fffbeb !important;
-      --tw-gradient-via: #ffffff !important;
-      --tw-gradient-to: #eef2ff !important;
+    body.light-mode .from-amber-950\/40,
+    body.light-mode .from-amber-500\/20 {
+      background-image: linear-gradient(135deg, #fffbeb 0%, #fff1f2 100%) !important;
+      border-color: #fde68a !important;
     }
     body.light-mode .from-rose-950\/40 {
-      --tw-gradient-from: #fff1f2 !important;
-      --tw-gradient-via: #fffbeb !important;
-      --tw-gradient-to: #ffffff !important;
+      background-image: linear-gradient(135deg, #fff1f2 0%, #fffbeb 50%, #ffffff 100%) !important;
+      border-color: #fecdd3 !important;
+    }
+    body.light-mode .from-teal-950\/80,
+    body.light-mode .from-emerald-950\/80,
+    body.light-mode .from-emerald-950 {
+      background-image: linear-gradient(135deg, #ecfdf5 0%, #ffffff 55%, #f0fdfa 100%) !important;
+      border-color: #a7f3d0 !important;
+    }
+    /* 버튼용 진한 그라데이션은 흰 글씨와 선명한 컬러 유지 */
+    body.light-mode button.from-indigo-600,
+    body.light-mode div.from-indigo-500 {
+      background-image: linear-gradient(135deg, #4f46e5 0%, #0891b2 100%) !important;
+      color: #ffffff !important;
+    }
+    body.light-mode button.from-emerald-600,
+    body.light-mode div.from-emerald-500 {
+      background-image: linear-gradient(135deg, #059669 0%, #0d9488 100%) !important;
+      color: #ffffff !important;
     }
     body.light-mode .bg-indigo-950\/60,
     body.light-mode .bg-indigo-950\/20 {
@@ -184,6 +200,7 @@
   <!-- 데이터 및 엔진 스크립트 -->
   <script src="./js/data.js"></script>
   <script src="./js/summary_data.js"></script>
+  <script src="./js/practical_data.js"></script>
   <script src="./js/engine.js"></script>
   <script type="text/babel" src="./js/app.js"></script>
 </body>

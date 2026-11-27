@@ -295,19 +295,25 @@ window.InfoSecEngine = {
     return true;
   },
 
-  // ================= 2. 문제 은행 & 연도 추출 =================
-  getCustomQuestions() {
+  // ================= 2. 문제 은행 (필기 / 실기 완벽 구분) & 연도 추출 =================
+  getCustomQuestions(examType = null) {
     const key = this.getUserKey(this.STORAGE_KEYS.CUSTOM_QUESTIONS);
     const customRaw = localStorage.getItem(key) || localStorage.getItem(this.STORAGE_KEYS.CUSTOM_QUESTIONS);
+    let list = [];
     try {
-      return customRaw ? JSON.parse(customRaw) : [];
+      list = customRaw ? JSON.parse(customRaw) : [];
     } catch (e) {
-      return [];
+      list = [];
     }
+    if (!examType) return list;
+    return list.filter((q) => (q.examType || "written") === examType);
   },
 
-  getAllQuestions() {
-    return [...window.INITIAL_QUESTIONS, ...this.getCustomQuestions()];
+  getAllQuestions(examType = "written") {
+    if (examType === "practical") {
+      return [...(window.PRACTICAL_QUESTIONS || []), ...this.getCustomQuestions("practical")];
+    }
+    return [...(window.INITIAL_QUESTIONS || []), ...this.getCustomQuestions("written")];
   },
 
   // 문제의 연도(2022, 2023, 2024, 2025, 2026 등) 추출 헬퍼
@@ -318,8 +324,8 @@ window.InfoSecEngine = {
   },
 
   // 선택 가능한 기출 연도 목록 반환 (예: ["2026", "2025", "2024", "2023", "2022"])
-  getAvailableYears() {
-    const all = this.getAllQuestions();
+  getAvailableYears(examType = "written") {
+    const all = this.getAllQuestions(examType);
     const yearSet = new Set();
     all.forEach((q) => {
       const y = this.extractYearNumber(q.year);
@@ -330,11 +336,35 @@ window.InfoSecEngine = {
 
   addCustomQuestions(newQuestions) {
     const key = this.getUserKey(this.STORAGE_KEYS.CUSTOM_QUESTIONS);
-    const customList = this.getCustomQuestions();
+    const customList = this.getCustomQuestions(null);
     const updated = [...newQuestions, ...customList];
     localStorage.setItem(key, JSON.stringify(updated));
     this.syncToCloud();
     return updated;
+  },
+
+  // 실기 주관식(단답형/서술형/작업형) 텍스트 답안 키워드 자동 채점기
+  gradePracticalInput(questionObj, userInputText) {
+    const cleanInput = (userInputText || "").trim().toLowerCase();
+    if (!cleanInput) return { isCorrect: false, matchedCount: 0 };
+    const keywords = questionObj.acceptedKeywords || [];
+    if (keywords.length === 0) {
+      const ansOpt = (questionObj.options?.[questionObj.answer] || "").toLowerCase();
+      return { isCorrect: ansOpt.includes(cleanInput) || cleanInput.includes(ansOpt), matchedCount: 1 };
+    }
+    let matchedCount = 0;
+    keywords.forEach((kw) => {
+      if (cleanInput.includes(kw.toLowerCase())) {
+        matchedCount++;
+      }
+    });
+    // 핵심 키워드 중 1개 이상 정확히 포함하면 정답 인정 (복수 빈칸의 경우 절반 이상 포함 시 정답)
+    const threshold = keywords.length >= 3 ? 2 : 1;
+    return {
+      isCorrect: matchedCount >= threshold,
+      matchedCount,
+      totalKeywords: keywords.length
+    };
   },
 
   // ================= 3. 풀이 이력 & 오답 초기화 =================
@@ -363,16 +393,17 @@ window.InfoSecEngine = {
     return history;
   },
 
-  // 오답노트 초기화 (특정 과목 또는 전체 오답 상태를 '복습 완료/초기화'로 해제)
-  clearWrongNotes(subjectId = null) {
+  // 오답노트 초기화 (현재 선택된 시험 유형(필기/실기) 또는 과목의 오답 상태를 초기화)
+  clearWrongNotes(subjectId = null, examType = null) {
     const key = this.getUserKey(this.STORAGE_KEYS.HISTORY);
     const history = this.getHistory();
-    const allQuestions = this.getAllQuestions();
+    const targetQuestions = examType ? this.getAllQuestions(examType) : [...this.getAllQuestions("written"), ...this.getAllQuestions("practical")];
+    const targetIdSet = new Set(targetQuestions.map((q) => q.id));
 
     Object.keys(history).forEach((qId) => {
-      if (history[qId] && history[qId].lastWrong) {
+      if (history[qId] && history[qId].lastWrong && targetIdSet.has(qId)) {
         if (subjectId) {
-          const qObj = allQuestions.find((q) => q.id === qId);
+          const qObj = targetQuestions.find((q) => q.id === qId);
           if (qObj && Number(qObj.subjectId) === Number(subjectId)) {
             history[qId].lastWrong = false;
           }
@@ -430,8 +461,8 @@ window.InfoSecEngine = {
     return list;
   },
 
-  getSubjectStats() {
-    const questions = this.getAllQuestions();
+  getSubjectStats(examType = "written") {
+    const questions = this.getAllQuestions(examType);
     const history = this.getHistory();
 
     return window.INFOSEC_SUBJECTS.map((subj) => {
@@ -476,16 +507,17 @@ window.InfoSecEngine = {
     return copy;
   },
 
-  // ================= 4. 랜덤 기출 모의고사 생성 (연도별 필터 포함) =================
+  // ================= 4. 랜덤 기출 모의고사 생성 (필기/실기 구분 및 연도별 필터 포함) =================
   generateRandomExam({
+    examType = "written",
     subjectIds = [1, 2, 3, 4, 5],
-    yearFilter = "all", // 'all' | '2026' | '2025' | '2024' | '2023' | '2022'
+    yearFilter = "all",
     count = 10,
-    mode = "all", // 'all' | 'wrong_only' | 'unsolved_first' | 'bookmarked'
+    mode = "all",
     shuffleOptions = true,
     includeSmartVariations = false
   }) {
-    const allQuestions = this.getAllQuestions();
+    const allQuestions = this.getAllQuestions(examType);
     const history = this.getHistory();
     const bookmarks = this.getBookmarks();
 
@@ -558,7 +590,8 @@ window.InfoSecEngine = {
   },
 
   createLocalSmartVariation(baseQuestion, variantSeed = 0) {
-    const allSameSubj = this.getAllQuestions().filter(
+    const qExamType = baseQuestion.examType || "written";
+    const allSameSubj = this.getAllQuestions(qExamType).filter(
       (q) => q.subjectId === baseQuestion.subjectId && q.id !== baseQuestion.id
     );
     const correctOptionText = baseQuestion.options[baseQuestion.answer];
@@ -577,7 +610,18 @@ window.InfoSecEngine = {
     let newAnswer = 0;
     const patternType = variantSeed % 3;
 
-    if (patternType === 1 && baseQuestion.keyPoint && peerQuestions.length >= 3) {
+    if (qExamType === "practical") {
+      // 실기 문제 변형 시 코드 스니펫, 모범답안, 채점 키워드를 유지하면서 실전 응용 시나리오로 변형
+      const tagLabel = (baseQuestion.tags && baseQuestion.tags.slice(0, 2).join("·")) || "실기응용";
+      newQuestionText = baseQuestion.question.replace(/^\[([^\]]+)\]/, `[$1·실전변형(${tagLabel})]`);
+      const indexed = baseQuestion.options.map((t, idx) => ({
+        text: t,
+        isAns: idx === baseQuestion.answer
+      }));
+      const shuffled = this.shuffleArray(indexed);
+      newOptions = shuffled.map((s) => s.text);
+      newAnswer = shuffled.findIndex((s) => s.isAns);
+    } else if (patternType === 1 && baseQuestion.keyPoint && peerQuestions.length >= 3) {
       const tagTitle = (baseQuestion.tags && baseQuestion.tags[0]) || "핵심 보안 기술";
       newQuestionText = `[기출변형·핵심요점] 다음 중 '${tagTitle}' 및 관련 과목의 핵심 보안 개념에 대한 설명으로 가장 올바른 것은?`;
       const peerFalseCandidates = [];
@@ -637,9 +681,11 @@ window.InfoSecEngine = {
     }
 
     return {
+      ...baseQuestion,
       id: `${baseQuestion.id}_VAR_${variantSeed}_${Math.floor(1000 + Math.random() * 9000)}`,
+      examType: qExamType,
       subjectId: baseQuestion.subjectId,
-      year: `${baseQuestion.year} (스마트 변형)`,
+      year: `${baseQuestion.year} (변형)`,
       difficulty: baseQuestion.difficulty === "하" ? "중" : "상",
       tags: [...(baseQuestion.tags || []), "기출변형"],
       question: newQuestionText,
@@ -650,15 +696,15 @@ window.InfoSecEngine = {
     };
   },
 
-  async generateQuestionsWithAI({ subjectId, topicKeyword, count = 3, apiKey }) {
+  async generateQuestionsWithAI({ examType = "written", subjectId, topicKeyword, count = 3, apiKey }) {
     const subj = window.INFOSEC_SUBJECTS.find((s) => s.id === Number(subjectId)) || window.INFOSEC_SUBJECTS[0];
-    const sampleQuestions = this.getAllQuestions()
+    const sampleQuestions = this.getAllQuestions(examType)
       .filter((q) => q.subjectId === subj.id)
       .slice(0, 3);
 
     if (!apiKey || !apiKey.trim()) {
       const basePool = this.shuffleArray(
-        this.getAllQuestions().filter((q) => q.subjectId === subj.id)
+        this.getAllQuestions(examType).filter((q) => q.subjectId === subj.id)
       ).slice(0, count);
       const generated = basePool.map((q, idx) => this.createLocalSmartVariation(q, idx));
       this.addCustomQuestions(generated);
@@ -668,25 +714,31 @@ window.InfoSecEngine = {
       };
     }
 
-    const prompt = `당신은 대한민국 국가기술자격 '정보보안기사' 필기시험 출제위원입니다.
+    const isPractical = examType === "practical";
+    const prompt = `당신은 대한민국 국가기술자격 '정보보안기사' ${isPractical ? "실기(단답형·서술형·실무작업형)" : "필기(4지선다 객관식)"} 시험 출제위원입니다.
 과목: ${subj.name} (${subj.description})
 집중 주제/키워드: ${topicKeyword || "최근 빈출 핵심 기출 개념"}
 
 기존 기출 참고 예시:
 ${JSON.stringify(sampleQuestions, null, 2)}
 
-위 과목과 키워드를 바탕으로 실제 정보보안기사 필기시험 수준의 4지선다형 객관식 기출 변형 문제를 정확히 ${count}문제 생성해주세요.
-반드시 아래 JSON 배열 형식으로만 응답하세요 (마크다운 코드블록 없이 순수 JSON 배열만 출력):
+위 과목과 키워드를 바탕으로 실제 정보보안기사 ${isPractical ? "실기시험(로그/설정 코드 스니펫, 모범답안, 채점키워드 포함)" : "필기시험"} 수준의 기출 변형 문제를 정확히 ${count}문제 생성해주세요.
+반드시 아래 JSON 배열 형식으로만 응답하세요:
 [
   {
+    "examType": "${examType}",
+    "pCategory": "${isPractical ? "실무/작업형" : "객관식"}",
     "subjectId": ${subj.id},
-    "year": "2026년 AI 기출변형",
+    "year": "2026년 AI ${isPractical ? "실기" : "필기"}변형",
     "difficulty": "중",
     "tags": ["키워드1", "키워드2"],
     "question": "문제 지문...",
+    "codeSnippet": "${isPractical ? "설정 파일이나 패킷 로그 예시..." : ""}",
+    "acceptedKeywords": ["핵심정답키워드"],
+    "modelAnswer": "실기 모범 답안",
     "options": ["보기1", "보기2", "보기3", "보기4"],
     "answer": 0,
-    "explanation": "정답 및 오답 선지에 대한 상세하고 명확한 해설",
+    "explanation": "상세하고 명확한 해설",
     "keyPoint": "수험생이 한 줄로 암기할 핵심 요약 포인트"
   }
 ]`;
@@ -715,7 +767,8 @@ ${JSON.stringify(sampleQuestions, null, 2)}
     const parsed = JSON.parse(rawText.replace(/```json|```/g, "").trim());
     const formatted = parsed.map((item, idx) => ({
       ...item,
-      id: `AI_${subj.id}_${Date.now()}_${idx}`,
+      id: `AI_${isPractical ? "P" : "Q"}_${subj.id}_${Date.now()}_${idx}`,
+      examType,
       subjectId: Number(subj.id)
     }));
 
@@ -727,12 +780,13 @@ ${JSON.stringify(sampleQuestions, null, 2)}
   },
 
   generateCustomSummary({
+    examType = "written",
     subjectIds = [1, 2, 3, 4, 5],
     includeWrongNotes = true,
     includeBookmarks = true,
     searchKeyword = ""
   }) {
-    const allQuestions = this.getAllQuestions();
+    const allQuestions = this.getAllQuestions(examType);
     const history = this.getHistory();
     const bookmarks = this.getBookmarks();
 
@@ -753,7 +807,10 @@ ${JSON.stringify(sampleQuestions, null, 2)}
     const wrongQuestions = filteredQuestions.filter((q) => history[q.id] && history[q.id].lastWrong);
     const bookmarkedQuestions = filteredQuestions.filter((q) => bookmarks.includes(q.id));
 
-    const summarySource = window.DETAILED_SUBJECT_SUMMARIES || window.SUBJECT_SUMMARIES;
+    const summarySource =
+      examType === "practical"
+        ? window.PRACTICAL_SUBJECT_SUMMARIES || window.DETAILED_SUBJECT_SUMMARIES
+        : window.DETAILED_SUBJECT_SUMMARIES || window.SUBJECT_SUMMARIES;
     const kw = searchKeyword.trim().toLowerCase();
 
     const subjectBlocks = subjectIds.map((sid) => {
