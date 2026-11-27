@@ -652,7 +652,8 @@ function App() {
                       <option value={15}>15문항 (집중)</option>
                       <option value={20}>20문항 (1과목)</option>
                       <option value={30}>30문항 (종합)</option>
-                      <option value={50}>50문항 (마라톤)</option>
+                      <option value={50}>50문항 (하프 모의)</option>
+                      <option value={100}>100문항 (실전 전체)</option>
                     </select>
                     <select
                       value={examConfig.mode}

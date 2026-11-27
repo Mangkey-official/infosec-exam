@@ -162,14 +162,31 @@ window.InfoSecEngine = {
 
     let selected = shuffledPool.slice(0, Math.min(count, shuffledPool.length));
 
-    // 만약 요청 문항 수가 현재 풀보다 많고 스마트 변형 옵션이 켜져 있으면 변형 문제를 자동 생성하여 채움
+    // 1) 스마트 변형 혼합 옵션이 켜져 있으면 기본 문제와 스마트 변형 문제를 혼합
     if (includeSmartVariations && selected.length > 0) {
-      const variations = selected.map((q) => this.createLocalSmartVariation(q));
+      const halfCount = Math.max(1, Math.floor(count / 2));
+      const baseSlice = selected.slice(0, halfCount);
+      const variations = baseSlice.map((q, idx) => this.createLocalSmartVariation(q, idx));
       selected = this.shuffleArray([...selected, ...variations]).slice(0, count);
     }
 
+    // 2) 만약 선택한 과목이나 필터의 원본 문항 수가 요청한 count(예: 50문항, 100문항)보다 적을 경우,
+    // 부족한 개수만큼 서로 다른 유형의 스마트 기출변형 문제를 자동 생성하여 요청한 문항 수(count)를 100% 정확히 채움!
+    if (selected.length < count && shuffledPool.length > 0) {
+      let fillIndex = 0;
+      const needed = count - selected.length;
+      const extraVariations = [];
+      while (extraVariations.length < needed) {
+        const baseQ = shuffledPool[fillIndex % shuffledPool.length];
+        const variantMode = Math.floor(fillIndex / shuffledPool.length) + 1;
+        extraVariations.push(this.createLocalSmartVariation(baseQ, variantMode + fillIndex));
+        fillIndex++;
+      }
+      selected = [...selected, ...extraVariations];
+    }
+
     // 선지(보기) 순서 랜덤 셔플 처리
-    return selected.map((q) => {
+    return selected.slice(0, count).map((q) => {
       if (!shuffleOptions) return { ...q };
       const indexedOptions = q.options.map((optText, idx) => ({
         text: optText,
@@ -185,30 +202,62 @@ window.InfoSecEngine = {
     });
   },
 
-  // 오프라인 스마트 기출 변형 문제 생성기 (API 키 없이도 기출의 핵심 개념과 오답 선지를 재조합해 새로운 유형으로 변형)
-  createLocalSmartVariation(baseQuestion) {
+  // 오프라인 스마트 기출 변형 문제 생성기 (다양한 변형 패턴을 지원하여 50~100문항 출제 시에도 중복 없는 실전 문제 생성)
+  createLocalSmartVariation(baseQuestion, variantSeed = 0) {
     const allSameSubj = this.getAllQuestions().filter(
       (q) => q.subjectId === baseQuestion.subjectId && q.id !== baseQuestion.id
     );
     const correctOptionText = baseQuestion.options[baseQuestion.answer];
     const wrongOptionsFromBase = baseQuestion.options.filter((_, idx) => idx !== baseQuestion.answer);
 
-    // 같은 과목의 다른 문제에서 핵심 요점이나 정답 선지를 가져와 혼합형 문제 생성
     const peerQuestions = this.shuffleArray(allSameSubj).slice(0, 3);
-    const isAskingForCorrect =
+    const isAskingForWrong =
       baseQuestion.question.includes("옳지 않은") ||
       baseQuestion.question.includes("틀린") ||
       baseQuestion.question.includes("부적절한") ||
-      baseQuestion.question.includes("거리가 먼");
+      baseQuestion.question.includes("거리가 먼") ||
+      baseQuestion.question.includes("바르지 않은");
 
     let newQuestionText = "";
     let newOptions = [];
     let newAnswer = 0;
+    const patternType = variantSeed % 3;
 
-    if (isAskingForCorrect && peerQuestions.length >= 2) {
-      // 원본이 '옳지 않은 것은?'이면 → 원본의 틀린 선지(정답)를 포함하고 다른 올바른 선지들과 조합하여 심화 변형
+    if (patternType === 1 && baseQuestion.keyPoint && peerQuestions.length >= 3) {
+      // 패턴 1: 핵심 요점(KeyPoint) 기반 정오 판별 문제 생성
+      const tagTitle = (baseQuestion.tags && baseQuestion.tags[0]) || "핵심 보안 기술";
+      newQuestionText = `[기출변형·핵심요점] 다음 중 '${tagTitle}' 및 관련 과목의 핵심 보안 개념에 대한 설명으로 가장 올바른 것은?`;
+      const peerFalseCandidates = [];
+      peerQuestions.forEach((pq) => {
+        const pqAskWrong =
+          pq.question.includes("옳지 않은") ||
+          pq.question.includes("틀린") ||
+          pq.question.includes("부적절한") ||
+          pq.question.includes("거리가 먼") ||
+          pq.question.includes("바르지 않은");
+        if (pqAskWrong) {
+          peerFalseCandidates.push(pq.options[pq.answer]);
+        } else {
+          const wrongOpt = pq.options.find((_, i) => i !== pq.answer);
+          if (wrongOpt) peerFalseCandidates.push(wrongOpt);
+        }
+      });
+      while (peerFalseCandidates.length < 3) {
+        peerFalseCandidates.push(
+          wrongOptionsFromBase[peerFalseCandidates.length % wrongOptionsFromBase.length]
+        );
+      }
+      const combined = [
+        { text: baseQuestion.keyPoint, isAns: true },
+        ...peerFalseCandidates.slice(0, 3).map((t) => ({ text: t, isAns: false }))
+      ];
+      const shuffled = this.shuffleArray(combined);
+      newOptions = shuffled.map((s) => s.text);
+      newAnswer = shuffled.findIndex((s) => s.isAns);
+    } else if (isAskingForWrong && peerQuestions.length >= 2 && patternType === 0) {
+      // 패턴 0: 다른 기출의 올바른 명제(keyPoint)들과 원본의 틀린 선지(정답)를 교차 조합한 고난도 통합형 문제
       const tagTitle = (baseQuestion.tags && baseQuestion.tags[0]) || "정보보안 핵심 개념";
-      newQuestionText = `[기출변형] 다음 중 '${tagTitle}' 및 관련 보안 기술에 대한 설명으로 가장 적절하지 않은 것은?`;
+      newQuestionText = `[기출변형·통합형] 다음 중 '${tagTitle}' 및 관련 보안 기술에 대한 설명으로 옳지 않은 것은?`;
       const trueStatements = [...wrongOptionsFromBase];
       peerQuestions.forEach((pq) => {
         if (pq.keyPoint) {
@@ -224,9 +273,9 @@ window.InfoSecEngine = {
       newOptions = shuffled.map((s) => s.text);
       newAnswer = shuffled.findIndex((s) => s.isAns);
     } else {
-      // 핵심 키워드/핵심 요점 역질문 변형
-      const tagTitle = (baseQuestion.tags && baseQuestion.tags.join(", ")) || "핵심 보안 기법";
-      newQuestionText = `[기출변형] ${baseQuestion.question.replace(/\?$/, "")} (핵심 응용 검토)?`;
+      // 패턴 2: 심화 응용 검토형 (선지 재구성)
+      const tagLabel = (baseQuestion.tags && baseQuestion.tags.slice(0, 2).join("·")) || "실전응용";
+      newQuestionText = `[기출변형·${tagLabel}] ${baseQuestion.question}`;
       const indexed = baseQuestion.options.map((t, idx) => ({
         text: t,
         isAns: idx === baseQuestion.answer
@@ -237,7 +286,7 @@ window.InfoSecEngine = {
     }
 
     return {
-      id: `${baseQuestion.id}_VAR_${Math.floor(1000 + Math.random() * 9000)}`,
+      id: `${baseQuestion.id}_VAR_${variantSeed}_${Math.floor(1000 + Math.random() * 9000)}`,
       subjectId: baseQuestion.subjectId,
       year: `${baseQuestion.year} (스마트 변형)`,
       difficulty: baseQuestion.difficulty === "하" ? "중" : "상",
