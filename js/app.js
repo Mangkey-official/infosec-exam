@@ -21,7 +21,8 @@ function App() {
 
   // 요약본 설정 상태
   const [summaryConfig, setSummaryConfig] = useState({
-    subjectIds: [1, 2, 3, 4, 5],
+    subjectIds: [1], // 기본으로 1과목부터 한눈에 집중해서 볼 수 있도록 설정 (전체 과목 버튼으로 전환 가능)
+    viewMode: "visual", // visual (과목별 비주얼 비교표·노트) | cheatsheet (시험직전 숫자·명령어 족보) | mynotes (오답·북마크 요점)
     includeWrongNotes: true,
     includeBookmarks: true,
     searchKeyword: "",
@@ -1022,21 +1023,27 @@ function App() {
           </div>
         )}
 
-        {/* ================= 3. 핵심 요약본 생성기 탭 ================= */}
+        {/* ================= 3. 핵심 요약본 생성기 탭 (비주얼 비교표 & 족보 업그레이드) ================= */}
         {activeTab === "summary" && (
           <div className="space-y-6">
-            {/* 요약본 커스텀 컨트롤 바 */}
+            {/* 상단 컨트롤 & 뷰 모드 선택 바 */}
             <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 no-print">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-lg font-bold text-white">
-                    📝 맞춤형 핵심 요약본 & 시험장 암기 노트 생성기
-                  </h2>
-                  <p className="text-xs text-slate-400">
-                    역대 기출 빈출 개념과 내가 틀린 오답 요점을 결합하여 나만의 요약 노트를 자동 생성합니다.
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg md:text-xl font-bold text-white">
+                      📝 한눈에 들어오는 비주얼 핵심 요약집 & 시험장 족보
+                    </h2>
+                    <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                      비교표 · 기출함정 · 단답족보
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">
+                    줄글 대신 시험에 그대로 나오는 비교 테이블, ⚠️기출 함정 주의보, 그리고 시험 직전 필수 숫자·명령어 족보로 구조화했습니다.
                   </p>
                 </div>
 
+                {/* 우측 액션 버튼 */}
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={() => {
@@ -1049,16 +1056,16 @@ function App() {
                         : "bg-slate-800 text-amber-300 border-slate-700 hover:bg-slate-700"
                     }`}
                   >
-                    {summaryConfig.blindMode ? "🙈 암기 가림막 켜짐 (클릭해 확인)" : "🧠 핵심키워드 암기 가림막 모드"}
+                    {summaryConfig.blindMode ? "🙈 암기 가림막 ON (클릭해 정답확인)" : "🧠 핵심키워드 암기 가림막"}
                   </button>
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(customSummary.markdown);
-                      showToast("요약본 마크다운이 클립보드에 복사되었습니다!", "success");
+                      showToast("비교표가 포함된 요약본 마크다운이 복사되었습니다!", "success");
                     }}
-                    className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700"
+                    className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700"
                   >
-                    📋 요약본 복사
+                    📋 복사
                   </button>
                   <button
                     onClick={() => {
@@ -1068,245 +1075,578 @@ function App() {
                       const url = URL.createObjectURL(blob);
                       const a = document.createElement("a");
                       a.href = url;
-                      a.download = `정보보안기사_핵심요약본_${new Date().toISOString().slice(0, 10)}.md`;
+                      a.download = `정보보안기사_비주얼핵심요약본_${new Date().toISOString().slice(0, 10)}.md`;
                       a.click();
                       URL.revokeObjectURL(url);
-                      showToast("마크다운(.md) 요약본 파일이 다운로드되었습니다!", "success");
+                      showToast("마크다운(.md) 파일이 다운로드되었습니다!", "success");
                     }}
-                    className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
+                    className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
                   >
-                    💾 .MD 파일 저장
+                    💾 .MD 저장
                   </button>
                   <button
                     onClick={() => window.print()}
-                    className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold"
+                    className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold"
                   >
-                    🖨️ 인쇄 / PDF 저장
+                    🖨️ 인쇄/PDF
                   </button>
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-4 pt-3 border-t border-slate-800">
-                {/* 과목 선택 */}
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <button
-                    onClick={() =>
-                      setSummaryConfig((prev) => ({
-                        ...prev,
-                        subjectIds: prev.subjectIds.length === 5 ? [1] : [1, 2, 3, 4, 5]
-                      }))
+              {/* 뷰 모드 전환 탭 (비주얼 과목별 비교표 vs 시험직전 숫자/명령어 족보 vs 내 오답·북마크 요점) */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-800">
+                <div className="flex flex-wrap items-center gap-2">
+                  {[
+                    {
+                      id: "visual",
+                      label: "📊 과목별 비주얼 비교표 & 기출함정 노트",
+                      desc: "표와 경고 박스로 한눈에 정리"
+                    },
+                    {
+                      id: "cheatsheet",
+                      label: "⚡ 시험 직전 필수 숫자·명령어·공식 족보",
+                      desc: "헷갈리는 숫자·포트·법규 기한 총정리"
+                    },
+                    {
+                      id: "mynotes",
+                      label: `🚨 내 오답(${customSummary.wrongQuestions.length}) & ⭐ 북마크(${customSummary.bookmarkedQuestions.length}) 요점`,
+                      desc: "내가 틀린 문제 핵심만 모아보기"
                     }
-                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border ${
-                      summaryConfig.subjectIds.length === 5
-                        ? "bg-indigo-600/30 border-indigo-500 text-indigo-200"
-                        : "bg-slate-950 border-slate-800 text-slate-400"
-                    }`}
-                  >
-                    전 과목
-                  </button>
+                  ].map((vm) => (
+                    <button
+                      key={vm.id}
+                      onClick={() => setSummaryConfig((prev) => ({ ...prev, viewMode: vm.id }))}
+                      className={`px-4 py-2.5 rounded-xl text-xs md:text-sm font-bold border transition flex items-center gap-2 ${
+                        summaryConfig.viewMode === vm.id
+                          ? "bg-gradient-to-r from-indigo-600 to-cyan-600 text-white border-indigo-400 shadow-lg shadow-indigo-600/20"
+                          : "bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700"
+                      }`}
+                    >
+                      <span>{vm.label}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* 키워드 즉시 검색 */}
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="🔍 표/개념 검색 (예: 72시간, utmp, CBC, Snort)..."
+                    value={summaryConfig.searchKeyword}
+                    onChange={(e) =>
+                      setSummaryConfig((prev) => ({ ...prev, searchKeyword: e.target.value }))
+                    }
+                    className="bg-slate-950 border border-slate-700 focus:border-indigo-500 rounded-xl px-3.5 py-2 text-xs text-slate-100 w-64 outline-none"
+                  />
+                  {summaryConfig.searchKeyword && (
+                    <button
+                      onClick={() => setSummaryConfig((prev) => ({ ...prev, searchKeyword: "" }))}
+                      className="text-xs text-slate-400 hover:text-white px-2"
+                    >
+                      초기화
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* 과목 빠른 선택 탭 (visual 모드일 때 한 과목씩 집중해서 보거나 전체 보기 전환) */}
+              {summaryConfig.viewMode === "visual" && (
+                <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-800/80">
+                  <span className="text-xs font-bold text-slate-400 mr-1">과목 선택:</span>
                   {window.INFOSEC_SUBJECTS.map((s) => {
-                    const active = summaryConfig.subjectIds.includes(s.id);
+                    const isSingleSelected =
+                      summaryConfig.subjectIds.length === 1 && summaryConfig.subjectIds[0] === s.id;
+                    const isIncluded = summaryConfig.subjectIds.includes(s.id);
                     return (
                       <button
                         key={s.id}
                         onClick={() =>
-                          setSummaryConfig((prev) => {
-                            const exists = prev.subjectIds.includes(s.id);
-                            const next = exists
-                              ? prev.subjectIds.filter((id) => id !== s.id)
-                              : [...prev.subjectIds, s.id].sort();
-                            return { ...prev, subjectIds: next };
-                          })
+                          setSummaryConfig((prev) => ({
+                            ...prev,
+                            subjectIds: [s.id]
+                          }))
                         }
-                        className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition ${
-                          active
-                            ? "bg-indigo-600 text-white border-indigo-500"
-                            : "bg-slate-950 text-slate-400 border-slate-800"
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition ${
+                          isSingleSelected
+                            ? "bg-indigo-600 text-white border-indigo-400 shadow-md shadow-indigo-600/30"
+                            : isIncluded && summaryConfig.subjectIds.length > 1
+                            ? "bg-indigo-950/60 text-indigo-200 border-indigo-500/40"
+                            : "bg-slate-950 text-slate-400 border-slate-800 hover:text-white hover:border-slate-700"
                         }`}
                       >
                         {s.id}과목: {s.shortName}
                       </button>
                     );
                   })}
-                </div>
-
-                {/* 검색 및 오답/북마크 포함 필터 */}
-                <div className="flex flex-wrap items-center gap-3 text-xs">
-                  <label className="inline-flex items-center gap-1.5 cursor-pointer text-rose-300">
-                    <input
-                      type="checkbox"
-                      checked={summaryConfig.includeWrongNotes}
-                      onChange={(e) =>
-                        setSummaryConfig((prev) => ({
-                          ...prev,
-                          includeWrongNotes: e.target.checked
-                        }))
-                      }
-                    />
-                    <span>🚨 내 오답 요점 상단 배치</span>
-                  </label>
-                  <label className="inline-flex items-center gap-1.5 cursor-pointer text-amber-300">
-                    <input
-                      type="checkbox"
-                      checked={summaryConfig.includeBookmarks}
-                      onChange={(e) =>
-                        setSummaryConfig((prev) => ({
-                          ...prev,
-                          includeBookmarks: e.target.checked
-                        }))
-                      }
-                    />
-                    <span>⭐ 북마크 요점 상단 배치</span>
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="키워드 필터 (예: IPSec, BLP, ISMS)..."
-                    value={summaryConfig.searchKeyword}
-                    onChange={(e) =>
-                      setSummaryConfig((prev) => ({ ...prev, searchKeyword: e.target.value }))
+                  <button
+                    onClick={() =>
+                      setSummaryConfig((prev) => ({
+                        ...prev,
+                        subjectIds: [1, 2, 3, 4, 5]
+                      }))
                     }
-                    className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 w-52"
-                  />
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition ml-auto ${
+                      summaryConfig.subjectIds.length === 5
+                        ? "bg-emerald-600 text-white border-emerald-400"
+                        : "bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700"
+                    }`}
+                  >
+                    📚 5과목 전체 한 번에 보기
+                  </button>
                 </div>
-              </div>
+              )}
             </div>
 
-            {/* 1) 오답 기반 최우선 암기 섹션 */}
-            {summaryConfig.includeWrongNotes && customSummary.wrongQuestions.length > 0 && (
-              <div className="p-6 rounded-2xl bg-rose-950/20 border border-rose-500/40 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-base font-bold text-rose-300">
-                    🚨 최우선 복습! 내가 틀린 문제 핵심 요약 ({customSummary.wrongQuestions.length}개)
-                  </h3>
-                  <span className="text-xs text-rose-400">
-                    모의고사에서 틀린 문제의 핵심 암기 포인트가 자동 추출되었습니다
+            {/* ================= [VIEW 1] 시험 직전 필수 숫자·명령어·공식 초압축 족보 ================= */}
+            {summaryConfig.viewMode === "cheatsheet" && (
+              <div className="space-y-5">
+                <div className="p-5 rounded-2xl bg-gradient-to-r from-amber-950/40 via-slate-900 to-indigo-950/40 border border-amber-500/30 flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <span className="text-xs font-bold text-amber-400 uppercase">
+                      ⚡ 시험장 들어가기 10분 전 필수 체크
+                    </span>
+                    <h3 className="text-lg font-extrabold text-white mt-0.5">
+                      가장 많이 헷갈리는 숫자 · 포트 · 법규 기한 · 암호학 공식 초압축 족보
+                    </h3>
+                  </div>
+                  <span className="text-xs text-slate-300">
+                    총 {(window.QUICK_CHEATSHEET || []).reduce((acc, c) => acc + c.items.length, 0)}개 핵심 단답 포인트
                   </span>
                 </div>
-                <div className="space-y-2">
-                  {customSummary.wrongQuestions.map((wq, idx) => (
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                  {(window.QUICK_CHEATSHEET || []).map((group, gIdx) => (
                     <div
-                      key={wq.id}
-                      className="p-3.5 rounded-xl bg-slate-900/90 border border-rose-500/30 text-xs md:text-sm text-slate-200"
+                      key={gIdx}
+                      className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden shadow-lg"
                     >
-                      <span className="font-bold text-rose-400 mr-2">
-                        [{wq.tags ? wq.tags.join(" · ") : wq.id}]
-                      </span>
-                      {renderFormattedText(wq.keyPoint || wq.explanation, `wrong_${idx}`)}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* 2) 북마크 중요 기출 포인트 섹션 */}
-            {summaryConfig.includeBookmarks && customSummary.bookmarkedQuestions.length > 0 && (
-              <div className="p-6 rounded-2xl bg-amber-950/20 border border-amber-500/40 space-y-3">
-                <h3 className="text-base font-bold text-amber-300">
-                  ⭐ 내가 북마크한 중요 기출 포인트 ({customSummary.bookmarkedQuestions.length}개)
-                </h3>
-                <div className="space-y-2">
-                  {customSummary.bookmarkedQuestions.map((bq, idx) => (
-                    <div
-                      key={bq.id}
-                      className="p-3.5 rounded-xl bg-slate-900/90 border border-amber-500/30 text-xs md:text-sm text-slate-200"
-                    >
-                      <span className="font-bold text-amber-400 mr-2">
-                        [{bq.tags ? bq.tags.join(" · ") : bq.id}]
-                      </span>
-                      {renderFormattedText(bq.keyPoint || bq.explanation, `bm_${idx}`)}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* 3) 과목별 체계적 핵심 요약 노트 + 기출 한 줄 요점 */}
-            <div className="space-y-6">
-              {customSummary.subjectBlocks.map((block) => {
-                if (!block.subject) return null;
-                return (
-                  <div
-                    key={block.subject.id}
-                    className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-5"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800">
-                      <div className="flex items-center gap-3">
-                        <span
-                          className={`px-3 py-1 rounded-lg text-xs font-bold ${block.subject.bgLight} ${block.subject.textColor} border ${block.subject.borderColor}`}
-                        >
-                          {block.subject.shortName}
-                        </span>
-                        <h3 className="text-lg font-bold text-white">
-                          {block.baseSummary?.title || block.subject.name}
-                        </h3>
-                      </div>
-                      {block.baseSummary?.examWeight && (
-                        <span className="text-xs text-slate-400">
-                          출제 비중: {block.baseSummary.examWeight}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* 과목별 핵심 이론 섹션 */}
-                    {block.baseSummary && (
-                      <div className="grid grid-cols-1 gap-4">
-                        {block.baseSummary.sections.map((sec, sIdx) => (
-                          <div
-                            key={sIdx}
-                            className="p-4 rounded-xl bg-slate-950/70 border border-slate-800/90 space-y-2.5"
-                          >
-                            <h4 className="text-sm font-bold text-indigo-300">{sec.topic}</h4>
-                            <ul className="space-y-2 text-xs md:text-sm text-slate-200 leading-relaxed list-disc list-inside">
-                              {sec.bullets.map((bullet, bIdx) => (
-                                <li key={bIdx} className="leading-relaxed">
-                                  {renderFormattedText(
-                                    bullet,
-                                    `subj_${block.subject.id}_${sIdx}_${bIdx}`
-                                  )}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* 해당 과목 기출문제에서 추출된 한 줄 암기 요점 모음 */}
-                    {block.keyPoints.length > 0 && (
-                      <div className="p-4 rounded-xl bg-indigo-950/20 border border-indigo-500/30 space-y-2.5">
-                        <h4 className="text-sm font-bold text-amber-300">
-                          💡 기출문제 연동 한 줄 핵심 요점 ({block.keyPoints.length}개)
+                      <div className="px-5 py-3.5 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between">
+                        <h4 className="font-bold text-sm md:text-base text-white">
+                          {group.category}
                         </h4>
-                        <div className="grid grid-cols-1 gap-2">
-                          {block.keyPoints.map((kp, kIdx) => (
-                            <div
-                              key={kp.id}
-                              className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-800 text-xs md:text-sm text-slate-200 flex items-start gap-2"
+                        <span className="text-[11px] px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-semibold">
+                          필수 암기
+                        </span>
+                      </div>
+                      <div className="divide-y divide-slate-800/80">
+                        {group.items
+                          .filter((it) => {
+                            if (!summaryConfig.searchKeyword.trim()) return true;
+                            const kw = summaryConfig.searchKeyword.trim().toLowerCase();
+                            return (
+                              it.key.toLowerCase().includes(kw) ||
+                              it.val.toLowerCase().includes(kw)
+                            );
+                          })
+                          .map((item, iIdx) => {
+                            const blindKey = `cs_${gIdx}_${iIdx}`;
+                            const isHidden =
+                              summaryConfig.blindMode && !revealedKeywords[blindKey];
+                            return (
+                              <div
+                                key={iIdx}
+                                className="p-4 hover:bg-slate-800/30 transition grid grid-cols-1 sm:grid-cols-12 gap-2 items-center"
+                              >
+                                <div className="sm:col-span-5 font-bold text-xs md:text-sm text-indigo-300">
+                                  {item.key}
+                                </div>
+                                <div
+                                  onClick={() => {
+                                    if (summaryConfig.blindMode) {
+                                      setRevealedKeywords((prev) => ({
+                                        ...prev,
+                                        [blindKey]: !prev[blindKey]
+                                      }));
+                                    }
+                                  }}
+                                  className={`sm:col-span-7 text-xs md:text-sm leading-relaxed rounded-lg px-3 py-2 border ${
+                                    isHidden
+                                      ? "bg-indigo-500/20 text-transparent border-indigo-400/40 cursor-pointer select-none"
+                                      : "bg-slate-950/80 text-amber-200 border-slate-800 font-medium"
+                                  }`}
+                                >
+                                  {item.val}
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ================= [VIEW 2] 내 오답 & 북마크 전용 요약 뷰 ================= */}
+            {summaryConfig.viewMode === "mynotes" && (
+              <div className="space-y-6">
+                {/* 오답 요약 */}
+                <div className="p-6 rounded-2xl bg-rose-950/20 border border-rose-500/40 space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-base md:text-lg font-bold text-rose-300">
+                      🚨 최우선 암기! 내가 틀린 문제 핵심 요점 ({customSummary.wrongQuestions.length}건)
+                    </h3>
+                    {customSummary.wrongQuestions.length > 0 && (
+                      <button
+                        onClick={() =>
+                          startRandomExam({
+                            ...examConfig,
+                            subjectIds: [1, 2, 3, 4, 5],
+                            count: customSummary.wrongQuestions.length,
+                            mode: "wrong_only",
+                            solveStyle: "study"
+                          })
+                        }
+                        className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold"
+                      >
+                        🎲 이 오답들만 바로 재시험 보기
+                      </button>
+                    )}
+                  </div>
+                  {customSummary.wrongQuestions.length === 0 ? (
+                    <p className="text-xs text-slate-400">
+                      아직 틀린 오답 문제가 없습니다. 모의고사를 풀고 틀린 문제가 생기면 이곳에 핵심 요점이 자동 정리됩니다.
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {customSummary.wrongQuestions.map((wq, idx) => (
+                        <div
+                          key={wq.id}
+                          className="p-4 rounded-xl bg-slate-900/95 border border-rose-500/30 space-y-2"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold px-2 py-0.5 rounded bg-rose-500/20 text-rose-300">
+                              {wq.tags ? wq.tags.join(" · ") : wq.id}
+                            </span>
+                            <span className="text-[11px] text-slate-400">{wq.year}</span>
+                          </div>
+                          <div className="text-xs text-slate-400 line-clamp-1">{wq.question}</div>
+                          <div className="text-xs md:text-sm font-semibold text-amber-200 bg-slate-950 p-3 rounded-lg border border-slate-800">
+                            💡 {renderFormattedText(wq.keyPoint || wq.explanation, `wrong_only_${idx}`)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 북마크 요약 */}
+                <div className="p-6 rounded-2xl bg-amber-950/20 border border-amber-500/40 space-y-4">
+                  <h3 className="text-base md:text-lg font-bold text-amber-300">
+                    ⭐ 내가 별표(북마크)한 중요 기출 포인트 ({customSummary.bookmarkedQuestions.length}건)
+                  </h3>
+                  {customSummary.bookmarkedQuestions.length === 0 ? (
+                    <p className="text-xs text-slate-400">
+                      문제 풀이 중 우측 상단의 [☆ 북마크] 버튼을 누르면 이곳에 중요 요점이 자동 수집됩니다.
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {customSummary.bookmarkedQuestions.map((bq, idx) => (
+                        <div
+                          key={bq.id}
+                          className="p-4 rounded-xl bg-slate-900/95 border border-amber-500/30 space-y-2"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">
+                              {bq.tags ? bq.tags.join(" · ") : bq.id}
+                            </span>
+                            <span className="text-[11px] text-slate-400">{bq.year}</span>
+                          </div>
+                          <div className="text-xs text-slate-400 line-clamp-1">{bq.question}</div>
+                          <div className="text-xs md:text-sm font-semibold text-amber-200 bg-slate-950 p-3 rounded-lg border border-slate-800">
+                            ⭐ {renderFormattedText(bq.keyPoint || bq.explanation, `bm_only_${idx}`)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ================= [VIEW 3] 과목별 비주얼 비교표 & 기출함정 상세 요약집 ================= */}
+            {summaryConfig.viewMode === "visual" && (
+              <div className="space-y-8">
+                {/* 오답이 있을 경우 상단 미니 알림 배너 */}
+                {customSummary.wrongQuestions.length > 0 && (
+                  <div className="p-4 rounded-2xl bg-rose-950/30 border border-rose-500/40 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-lg">🚨</span>
+                      <div>
+                        <span className="text-xs md:text-sm font-bold text-rose-200">
+                          현재 과목에서 내가 틀린 오답 요점 {customSummary.wrongQuestions.length}건이 있습니다!
+                        </span>
+                        <p className="text-xs text-rose-300/80">
+                          아래 기출 한 줄 요점 카드에 빨간색 [오답주의] 배지로 강조 표시되어 있습니다.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setSummaryConfig((prev) => ({ ...prev, viewMode: "mynotes" }))}
+                      className="px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 text-xs font-bold"
+                    >
+                      오답 요점만 모아보기 →
+                    </button>
+                  </div>
+                )}
+
+                {customSummary.subjectBlocks.map((block) => {
+                  if (!block.subject || !block.baseSummary) return null;
+                  return (
+                    <div
+                      key={block.subject.id}
+                      className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden shadow-xl"
+                    >
+                      {/* 과목 헤더 배너 */}
+                      <div className="p-6 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border-b border-slate-800 space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <span
+                              className={`px-3 py-1 rounded-xl text-xs font-extrabold ${block.subject.bgLight} ${block.subject.textColor} border ${block.subject.borderColor}`}
                             >
-                              <span className="shrink-0 font-bold text-indigo-400">
-                                [{kp.tags.slice(0, 2).join(", ")}]
-                              </span>
-                              <span className="flex-1">
-                                {kp.isWrong && (
-                                  <span className="text-rose-400 font-bold mr-1">[오답주의]</span>
-                                )}
-                                {kp.isBookmarked && (
-                                  <span className="text-amber-400 font-bold mr-1">[북마크]</span>
-                                )}
-                                {renderFormattedText(
-                                  kp.keyPoint,
-                                  `kp_${block.subject.id}_${kIdx}`
-                                )}
-                              </span>
-                            </div>
+                              {block.subject.shortName}
+                            </span>
+                            <h3 className="text-lg md:text-xl font-extrabold text-white">
+                              {block.baseSummary.title}
+                            </h3>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs px-3 py-1 rounded-lg bg-slate-800 text-slate-300 font-semibold">
+                              🎯 {block.baseSummary.examWeight}
+                            </span>
+                            <button
+                              onClick={() =>
+                                startRandomExam({
+                                  ...examConfig,
+                                  subjectIds: [block.subject.id],
+                                  count: 10,
+                                  mode: "all",
+                                  solveStyle: "study"
+                                })
+                              }
+                              className="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold no-print"
+                            >
+                              🎲 이 과목 문제 바로 풀기
+                            </button>
+                          </div>
+                        </div>
+
+                        {block.baseSummary.overview && (
+                          <p className="text-xs md:text-sm text-slate-300 bg-slate-900/90 px-4 py-2.5 rounded-xl border border-slate-800">
+                            📌 <strong className="text-indigo-300">출제 경향 핵심:</strong>{" "}
+                            {block.baseSummary.overview}
+                          </p>
+                        )}
+
+                        {/* 단원 빠른 이동 목차 (Quick Jump Chips) */}
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1 no-print">
+                          <span className="text-[11px] font-bold text-slate-400 mr-1">
+                            단원 바로가기:
+                          </span>
+                          {block.baseSummary.sections.map((sec, idx) => (
+                            <a
+                              key={idx}
+                              href={`#${sec.id || `sec_${block.subject.id}_${idx}`}`}
+                              className="text-xs px-2.5 py-1 rounded-lg bg-slate-950 hover:bg-indigo-950 text-slate-300 hover:text-indigo-300 border border-slate-800 transition"
+                            >
+                              {sec.topic}
+                            </a>
                           ))}
                         </div>
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+
+                      {/* 단원별 상세 비주얼 카드 & 비교 테이블 */}
+                      <div className="p-6 space-y-8">
+                        {block.baseSummary.sections.map((sec, sIdx) => (
+                          <div
+                            key={sIdx}
+                            id={sec.id || `sec_${block.subject.id}_${sIdx}`}
+                            className="rounded-2xl bg-slate-950/70 border border-slate-800/90 overflow-hidden"
+                          >
+                            {/* 단원 타이틀 & 출제 중요도 배지 */}
+                            <div className="px-5 py-4 bg-slate-900/70 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                              <h4 className="text-base md:text-lg font-extrabold text-white flex items-center gap-2">
+                                <span className="w-2 h-5 rounded-full bg-indigo-500 inline-block" />
+                                {sec.topic}
+                              </h4>
+                              {sec.importance && (
+                                <span className="text-xs font-extrabold px-3 py-1 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                                  {sec.importance}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="p-5 space-y-4">
+                              {/* 단원 한 줄 가이드 */}
+                              {sec.summary && (
+                                <p className="text-xs md:text-sm text-slate-300 leading-relaxed">
+                                  {sec.summary}
+                                </p>
+                              )}
+
+                              {/* ★ 핵심 비주얼 비교 테이블 (Table) ★ */}
+                              {sec.table && (
+                                <div className="overflow-x-auto rounded-xl border border-slate-800 shadow-inner">
+                                  <table className="w-full text-left border-collapse">
+                                    <thead>
+                                      <tr className="bg-indigo-950/60 border-b border-slate-800 text-indigo-200 text-xs font-extrabold uppercase">
+                                        {sec.table.headers.map((h, hIdx) => (
+                                          <th
+                                            key={hIdx}
+                                            className="py-3 px-4 border-r border-slate-800/80 last:border-r-0 whitespace-nowrap"
+                                          >
+                                            {h}
+                                          </th>
+                                        ))}
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-800/80 text-xs md:text-sm">
+                                      {sec.table.rows.map((row, rIdx) => (
+                                        <tr
+                                          key={rIdx}
+                                          className={
+                                            rIdx % 2 === 0
+                                              ? "bg-slate-950/90 hover:bg-slate-900/90 transition"
+                                              : "bg-slate-900/40 hover:bg-slate-900/90 transition"
+                                          }
+                                        >
+                                          {row.map((cell, cIdx) => {
+                                            const cellKey = `tbl_${block.subject.id}_${sIdx}_${rIdx}_${cIdx}`;
+                                            const isBlindTarget =
+                                              summaryConfig.blindMode &&
+                                              cIdx > 0 &&
+                                              !revealedKeywords[cellKey];
+                                            return (
+                                              <td
+                                                key={cIdx}
+                                                onClick={() => {
+                                                  if (summaryConfig.blindMode && cIdx > 0) {
+                                                    setRevealedKeywords((prev) => ({
+                                                      ...prev,
+                                                      [cellKey]: !prev[cellKey]
+                                                    }));
+                                                  }
+                                                }}
+                                                className={`py-3 px-4 border-r border-slate-800/60 last:border-r-0 whitespace-pre-line leading-relaxed align-top ${
+                                                  cIdx === 0
+                                                    ? "font-extrabold text-indigo-300 bg-slate-900/60 min-w-[140px]"
+                                                    : isBlindTarget
+                                                    ? "bg-indigo-500/15 text-transparent cursor-pointer select-none"
+                                                    : cIdx === 1
+                                                    ? "font-semibold text-amber-200/95"
+                                                    : "text-slate-200"
+                                                }`}
+                                              >
+                                                {cell}
+                                              </td>
+                                            );
+                                          })}
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+
+                              {/* 추가 핵심 요약 불릿 */}
+                              {sec.bullets && sec.bullets.length > 0 && (
+                                <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800/90 space-y-2">
+                                  <div className="text-xs font-bold text-indigo-400">
+                                    📌 필수 추가 암기 포인트
+                                  </div>
+                                  <ul className="space-y-1.5 text-xs md:text-sm text-slate-200 list-disc list-inside leading-relaxed">
+                                    {sec.bullets.map((bullet, bIdx) => (
+                                      <li key={bIdx} className="leading-relaxed">
+                                        {renderFormattedText(
+                                          bullet,
+                                          `subj_${block.subject.id}_${sIdx}_${bIdx}`
+                                        )}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+
+                              {/* ⚠️ 기출 함정 주의보 (Exam Trap Callout) */}
+                              {sec.trap && (
+                                <div className="p-4 rounded-xl bg-gradient-to-r from-rose-950/40 via-amber-950/30 to-slate-950 border border-rose-500/40 text-xs md:text-sm text-rose-100 leading-relaxed flex items-start gap-3">
+                                  <span className="text-lg shrink-0">🚨</span>
+                                  <div>
+                                    {renderFormattedText(
+                                      sec.trap,
+                                      `trap_${block.subject.id}_${sIdx}`
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+
+                        {/* 해당 과목 기출문제에서 추출된 한 줄 암기 요점 2열 카드 그리드 */}
+                        {block.keyPoints.length > 0 && (
+                          <div className="p-5 rounded-2xl bg-indigo-950/20 border border-indigo-500/30 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <h4 className="text-sm md:text-base font-extrabold text-amber-300">
+                                💡 기출문제 직결 한 줄 암기 카드 ({block.keyPoints.length}개)
+                              </h4>
+                              <span className="text-xs text-slate-400">
+                                각 기출문제에서 가장 자주 나오는 핵심 한 줄 정리
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {block.keyPoints.map((kp, kIdx) => (
+                                <div
+                                  key={kp.id}
+                                  className={`p-3.5 rounded-xl border text-xs md:text-sm leading-relaxed flex flex-col justify-between gap-2 ${
+                                    kp.isWrong
+                                      ? "bg-rose-950/30 border-rose-500/50 text-slate-100"
+                                      : kp.isBookmarked
+                                      ? "bg-amber-950/25 border-amber-500/40 text-slate-100"
+                                      : "bg-slate-950/90 border-slate-800 text-slate-200"
+                                  }`}
+                                >
+                                  <div className="flex flex-wrap items-center justify-between gap-1">
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      {kp.tags.slice(0, 3).map((tag, tIdx) => (
+                                        <span
+                                          key={tIdx}
+                                          className="text-[11px] font-bold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300"
+                                        >
+                                          #{tag}
+                                        </span>
+                                      ))}
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      {kp.isWrong && (
+                                        <span className="text-[11px] px-2 py-0.5 rounded bg-rose-500 text-white font-bold">
+                                          🚨 오답주의
+                                        </span>
+                                      )}
+                                      {kp.isBookmarked && (
+                                        <span className="text-[11px] px-2 py-0.5 rounded bg-amber-500 text-slate-950 font-bold">
+                                          ⭐ 북마크
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="text-slate-200 font-medium">
+                                    {renderFormattedText(
+                                      kp.keyPoint,
+                                      `kp_${block.subject.id}_${kIdx}`
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 

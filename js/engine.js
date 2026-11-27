@@ -356,10 +356,25 @@ ${JSON.stringify(sampleQuestions, null, 2)}
     const wrongQuestions = filteredQuestions.filter((q) => history[q.id] && history[q.id].lastWrong);
     const bookmarkedQuestions = filteredQuestions.filter((q) => bookmarks.includes(q.id));
 
-    // 과목별 핵심 요약 섹션 조립
+    // 과목별 핵심 요약 섹션 조립 (고도화된 DETAILED_SUBJECT_SUMMARIES 우선 활용)
+    const summarySource = window.DETAILED_SUBJECT_SUMMARIES || window.SUBJECT_SUMMARIES;
+    const kw = searchKeyword.trim().toLowerCase();
+
     const subjectBlocks = subjectIds.map((sid) => {
       const subjInfo = window.INFOSEC_SUBJECTS.find((s) => s.id === Number(sid));
-      const baseSummary = window.SUBJECT_SUMMARIES[sid];
+      const rawSummary = summarySource[sid];
+      let baseSummary = rawSummary;
+
+      if (rawSummary && kw) {
+        const filteredSections = rawSummary.sections.filter((sec) => {
+          const inTopic = sec.topic?.toLowerCase().includes(kw) || sec.summary?.toLowerCase().includes(kw) || sec.trap?.toLowerCase().includes(kw);
+          const inBullets = sec.bullets?.some((b) => b.toLowerCase().includes(kw));
+          const inTable = sec.table?.rows?.some((r) => r.some((cell) => cell.toLowerCase().includes(kw)));
+          return inTopic || inBullets || inTable;
+        });
+        baseSummary = { ...rawSummary, sections: filteredSections };
+      }
+
       const subjQuestions = filteredQuestions.filter((q) => q.subjectId === Number(sid));
       const keyPoints = subjQuestions
         .filter((q) => q.keyPoint)
@@ -378,8 +393,8 @@ ${JSON.stringify(sampleQuestions, null, 2)}
       };
     });
 
-    // 마크다운 내보내기용 텍스트 생성
-    let markdown = `# 🛡️ 정보보안기사 필기 맞춤형 핵심 요약본\n`;
+    // 마크다운 내보내기용 텍스트 생성 (비교표 및 기출 함정 포함)
+    let markdown = `# 🛡️ 정보보안기사 필기 맞춤형 비주얼 핵심 요약본\n`;
     markdown += `> 생성 일시: ${new Date().toLocaleString("ko-KR")}\n\n`;
 
     if (includeWrongNotes && wrongQuestions.length > 0) {
@@ -401,13 +416,30 @@ ${JSON.stringify(sampleQuestions, null, 2)}
     subjectBlocks.forEach((block) => {
       if (!block.subject) return;
       markdown += `## 📌 ${block.subject.name}\n`;
+      if (block.baseSummary?.overview) {
+        markdown += `> ${block.baseSummary.overview}\n\n`;
+      }
       if (block.baseSummary) {
         block.baseSummary.sections.forEach((sec) => {
-          markdown += `### ${sec.topic}\n`;
-          sec.bullets.forEach((b) => {
-            markdown += `- ${b}\n`;
-          });
-          markdown += `\n`;
+          markdown += `### ${sec.topic} ${sec.importance ? `[${sec.importance}]` : ""}\n`;
+          if (sec.summary) markdown += `${sec.summary}\n\n`;
+          if (sec.table) {
+            markdown += `| ${sec.table.headers.join(" | ")} |\n`;
+            markdown += `| ${sec.table.headers.map(() => "---").join(" | ")} |\n`;
+            sec.table.rows.forEach((row) => {
+              markdown += `| ${row.map((c) => c.replace(/\n/g, "<br>")).join(" | ")} |\n`;
+            });
+            markdown += `\n`;
+          }
+          if (sec.bullets) {
+            sec.bullets.forEach((b) => {
+              markdown += `- ${b}\n`;
+            });
+            markdown += `\n`;
+          }
+          if (sec.trap) {
+            markdown += `> ${sec.trap}\n\n`;
+          }
         });
       }
       if (block.keyPoints.length > 0) {
